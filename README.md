@@ -78,7 +78,8 @@ The toolchain lives entirely in `$HOME` — no root, no Android Studio.
 - Android SDK at `~/Android/Sdk` (`local.properties` points at it and is gitignored)
 
 ```bash
-./gradlew testDebugUnitTest     # 28 JVM tests, no device needed
+./gradlew testDebugUnitTest     # JVM tests, no device needed
+./gradlew lintDebug             # Android lint; must be clean
 ./gradlew assembleDebug         # app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```

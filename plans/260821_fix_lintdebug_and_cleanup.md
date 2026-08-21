@@ -35,19 +35,43 @@ Deliberately **not** doing either of the tempting alternatives:
 - A `lint-baseline.xml` — hides the two errors *and* every future one, which is worse than the
   status quo: the point of fixing this is to make `lintDebug` usable as a check again.
 
-## Success criterion
+## Outcome
 
-`./gradlew lintDebug` exits 0 on this branch. If it does not — if there are further errors these
-two were masking — report them rather than reaching for a baseline.
+`./gradlew lintDebug` **exits 0**, with zero errors remaining — no suppression, no baseline. The
+two errors were not masking anything further.
+
+`Notifications.notifyBatchProgress` now builds and posts the batch notification through
+`notifySafely`, and `BulkReplyService` has no direct `NotificationManagerCompat` reference at all
+(the import is gone). Three copies of "build a batch notification and post it to
+`BATCH_NOTIFICATION_ID`" collapsed to one.
+
+### README
+
+The stale count was **removed rather than corrected**. Writing "42 JVM tests" only resets the
+clock on the same drift — the number is not what a reader needs, and it is wrong again the next
+time a test is added. The line now names the command and what it is for, and `lintDebug` was
+added alongside it now that it passes and is worth running.
+
+`plans/main.md` still says "28 JVM unit tests"; that one is left alone deliberately. It is a
+record of what the initial commit contained, and it was accurate then.
+
+### Verified
+
+- `testDebugUnitTest` 42/0/0, `assembleDebug` clean, `lintDebug` clean — all exit 0.
+- On the Android 16 emulator, a dry-run batch of 11 senders ran to completion with the foreground
+  service posting through the refactored path: `foregroundNoti` on channel `batch_progress`
+  during the run, and the notification updating to "Opt-out batch finished" afterwards. That last
+  post is the `finish()` call site, one of the two that changed, so both are exercised. No
+  crashes.
+
+### Answered
+
+`plans/master.md` was **renamed** to `plans/main.md` rather than deleted, with a line noting why
+the old name existed. The reasoning behind the initial implementation is worth keeping; only the
+filename was wrong.
 
 ## Out of scope
 
 - Lint *warnings* (21 of them at last count). Only the errors block the task.
 - Wiring lint into `/merge`'s check list; that is a workflow change, not this one.
 
-## Open question
-
-Whether `plans/master.md` should be renamed to `plans/main.md` or deleted. Renaming keeps the
-initial implementation's reasoning under a name that matches reality; nothing will ever update it
-either way, since `/push` refuses to write a plan for `main`. Taking the rename unless told
-otherwise.
