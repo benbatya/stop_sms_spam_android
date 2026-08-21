@@ -63,9 +63,9 @@ fun ReviewScreen(
                 ) {
                     Text("Pacing", style = MaterialTheme.typography.titleMedium)
 
-                    CommittingSlider(
+                    SteppedSlider(
                         value = settings.delaySeconds,
-                        range = SendPacing.MIN_DELAY_SECONDS..SendPacing.MAX_DELAY_SECONDS,
+                        steps = SendPacing.DELAY_STEPS,
                         label = { "Delay between replies: ${it}s" },
                         onCommit = { onSettingsChange(settings.copy(delaySeconds = it)) },
                     )
@@ -86,20 +86,32 @@ fun ReviewScreen(
                     )
 
                     if (throttled) {
+                        // A safe delay only exists for batches small enough that one fits inside
+                        // the supported range; past that the honest thing is to warn and say why,
+                        // not to offer a button that changes a number without fixing anything.
+                        val safeDelay = SendPacing.safeDelaySecondsFor(senders.size)
                         WarningCard(
-                            "Android blocks an app after ${SendPacing.FRAMEWORK_BURST_LIMIT} " +
-                                "messages in 30 minutes and then asks you to confirm each one. " +
-                                "At this pace that limit will be hit.",
-                            action = {
-                                TextButton(
-                                    onClick = {
-                                        onSettingsChange(
-                                            settings.copy(
-                                                delaySeconds = SendPacing.safeDelaySecondsFor(senders.size),
-                                            ),
-                                        )
-                                    },
-                                ) { Text("Use a safe delay") }
+                            buildString {
+                                append("Android blocks an app after ")
+                                append("${SendPacing.FRAMEWORK_BURST_LIMIT} messages in 30 ")
+                                append("minutes and then asks you to confirm each one. ")
+                                append("At this pace that limit will be hit. ")
+                                if (safeDelay == null) {
+                                    append(
+                                        "No delay this app offers is long enough to avoid it for " +
+                                            "a batch this size - send fewer at a time, or expect " +
+                                            "to tap through a confirmation for the later ones.",
+                                    )
+                                }
+                            },
+                            action = safeDelay?.let { seconds ->
+                                {
+                                    TextButton(
+                                        onClick = {
+                                            onSettingsChange(settings.copy(delaySeconds = seconds))
+                                        },
+                                    ) { Text("Use a safe delay (${seconds}s)") }
+                                }
                             },
                         )
                     }
@@ -198,6 +210,34 @@ fun ReviewScreen(
             }
         }
     }
+}
+
+/**
+ * A slider that snaps to a fixed list of values rather than sliding continuously.
+ *
+ * The thumb travels over evenly spaced detents while the label shows the value each one maps to,
+ * so the unevenly spaced delays in [SendPacing.DELAY_STEPS] are all equally easy to hit - the
+ * point of stepping it in the first place.
+ */
+@Composable
+private fun SteppedSlider(
+    value: Int,
+    steps: List<Int>,
+    label: (Int) -> String,
+    onCommit: (Int) -> Unit,
+) {
+    var index by remember(value) { mutableFloatStateOf(SendPacing.stepIndexOf(value).toFloat()) }
+    val selected = steps[index.roundToInt().coerceIn(steps.indices)]
+
+    Text(label(selected), style = MaterialTheme.typography.bodyMedium)
+    Slider(
+        value = index,
+        onValueChange = { index = it },
+        onValueChangeFinished = { onCommit(selected) },
+        valueRange = 0f..(steps.size - 1).toFloat(),
+        // Compose counts the detents *between* the ends, so N values means N-2 steps.
+        steps = (steps.size - 2).coerceAtLeast(0),
+    )
 }
 
 /**

@@ -1,5 +1,6 @@
 package com.batya.stopsmsspam.bulk
 
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToLong
@@ -11,14 +12,30 @@ import kotlin.random.Random
  * Two separate things push back on sending fast. The Android framework itself blocks an app
  * that exceeds `SMS_OUTGOING_CHECK_MAX_COUNT` messages inside `SMS_OUTGOING_CHECK_INTERVAL_MS`
  * (30 messages / 30 minutes on stock) and starts prompting per message; carriers separately
- * dislike bursts of identical short messages. Both are addressed by putting a real gap between
- * sends, which is what the delay control is for.
+ * dislike bursts of identical short messages.
+ *
+ * The delay control addresses both, but they want very different numbers: a couple of seconds is
+ * plenty of courtesy to a carrier, while clearing the framework check for a batch over
+ * [SendPacing.FRAMEWORK_BURST_LIMIT] needs about a minute. [SendPacing.DELAY_STEPS] spans that
+ * spread without a slider whose travel is mostly wasted - see its own note.
  */
 object SendPacing {
 
-    const val MIN_DELAY_SECONDS = 5
-    const val MAX_DELAY_SECONDS = 300
-    const val DEFAULT_DELAY_SECONDS = 60
+    /**
+     * The delays the slider offers, in seconds: Fibonacci from 1 up to 89, the last term under
+     * 100.
+     *
+     * Stepped rather than continuous because the useful precision is not uniform. One second
+     * versus two is a real difference; 55 versus 56 is not. Fibonacci spacing puts most of the
+     * detents where a batch is actually tuned - the low single digits - while still reaching the
+     * ~62s needed to clear Android's outgoing-SMS check. A linear slider cannot do both: to span
+     * that range it has to make almost all of its travel meaningless.
+     */
+    val DELAY_STEPS = listOf(1, 2, 3, 5, 8, 13, 21, 34, 55, 89)
+
+    val MIN_DELAY_SECONDS = DELAY_STEPS.first()
+    val MAX_DELAY_SECONDS = DELAY_STEPS.last()
+    const val DEFAULT_DELAY_SECONDS = 5
     const val DEFAULT_JITTER_PERCENT = 20
     const val MAX_JITTER_PERCENT = 50
 
@@ -56,12 +73,27 @@ object SendPacing {
     fun exceedsFrameworkThrottle(count: Int, delaySeconds: Int): Boolean =
         messagesInThrottleWindow(count, delaySeconds) > FRAMEWORK_BURST_LIMIT
 
-    /** Smallest delay that keeps a batch of [count] messages under the framework limit. */
-    fun safeDelaySecondsFor(count: Int): Int {
-        if (count <= FRAMEWORK_BURST_LIMIT) return MIN_DELAY_SECONDS
-        val needed = FRAMEWORK_WINDOW_SECONDS / (FRAMEWORK_BURST_LIMIT - 1) + 1
-        return needed.coerceIn(MIN_DELAY_SECONDS, MAX_DELAY_SECONDS)
-    }
+    /**
+     * The shortest offered delay that keeps a batch of [count] messages under the framework
+     * limit, or null if no step is long enough.
+     *
+     * Asked of [DELAY_STEPS] directly rather than derived arithmetically, so the answer is by
+     * construction a delay the slider can actually select - the previous version computed a
+     * value and then clamped it, which could hand back a delay that did not clear the check.
+     * With the current steps there is always an answer (89s), but the null case is kept because
+     * whether one exists is a property of [DELAY_STEPS], not a fact to hard-code.
+     */
+    fun safeDelaySecondsFor(count: Int): Int? =
+        DELAY_STEPS.firstOrNull { !exceedsFrameworkThrottle(count, it) }
+
+    /**
+     * Snaps an arbitrary delay onto the nearest offered step, for values that predate the
+     * current steps - a preference stored when the range was different, or a resumed batch.
+     */
+    fun nearestStep(seconds: Int): Int = DELAY_STEPS.minByOrNull { abs(it - seconds) } ?: DEFAULT_DELAY_SECONDS
+
+    /** Position of [seconds] on the slider, after snapping. */
+    fun stepIndexOf(seconds: Int): Int = DELAY_STEPS.indexOf(nearestStep(seconds)).coerceAtLeast(0)
 
     /** Rough wall-clock length of the run, ignoring per-send network time. */
     fun estimatedDurationSeconds(count: Int, delaySeconds: Int): Int =
