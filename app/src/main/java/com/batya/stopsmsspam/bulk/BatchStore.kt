@@ -63,6 +63,7 @@ class BatchStore(context: Context) {
                             put("address", plan.address)
                             put("keyword", plan.keyword)
                             put("subscriptionId", plan.subscriptionId)
+                            put("sendReply", plan.sendReply)
                             put("messageIds", JSONArray().apply { plan.messageIds.forEach { put(it) } })
                         },
                     )
@@ -96,6 +97,7 @@ class BatchStore(context: Context) {
                 address = obj.getString("address"),
                 keyword = obj.getString("keyword"),
                 subscriptionId = obj.optInt("subscriptionId", -1),
+                sendReply = obj.optBoolean("sendReply", true),
                 messageIds = (0 until idsJson.length()).map { idsJson.getLong(it) },
             )
         }

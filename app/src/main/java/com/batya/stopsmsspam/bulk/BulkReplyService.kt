@@ -109,7 +109,23 @@ class BulkReplyService : Service() {
             BulkReplyController.update { it.copy(currentAddress = plan.address, nextSendAtMillis = null) }
             publish(outcomes)
 
-            val outcome = if (snapshot.dryRun) {
+            val outcome = if (!plan.sendReply) {
+                // Already opted out of: clean the thread up, send nothing. Not gated on dryRun
+                // because marking read is what the user asked for either way - and a dry run
+                // that silently skipped it would misrepresent what the real run does.
+                if (!snapshot.dryRun) applyPostSend(repository, snapshot, plan.messageIds)
+                SendOutcome(
+                    address = plan.address,
+                    keyword = plan.keyword,
+                    status = SendStatus.CLEARED,
+                    detail = if (snapshot.dryRun) {
+                        "Dry run - would be cleared, not replied to"
+                    } else {
+                        "Already unsubscribed - cleared without replying"
+                    },
+                    timestamp = System.currentTimeMillis(),
+                )
+            } else if (snapshot.dryRun) {
                 // Exercise every step except the one that actually texts a stranger.
                 SendOutcome(
                     address = plan.address,
@@ -164,8 +180,10 @@ class BulkReplyService : Service() {
             store.save(snapshot.copy(outcomes = outcomes.toList()))
             publish(outcomes)
 
+            // Pacing exists to protect the radio and the carrier. A cleared thread touched
+            // neither, so waiting after one would just make a long batch longer for no reason.
             val isLast = index == remaining.lastIndex
-            if (!isLast) {
+            if (!isLast && plan.sendReply) {
                 val wait = SendPacing.delayMillis(snapshot.delaySeconds, snapshot.jitterPercent)
                 BulkReplyController.update {
                     it.copy(

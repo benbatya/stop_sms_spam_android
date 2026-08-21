@@ -135,7 +135,7 @@ private fun SenderRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp)
-            .then(if (sender.canReply) Modifier.clickable(onClick = onToggle) else Modifier),
+            .clickable(onClick = onToggle),
         colors = if (selected) {
             CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
         } else {
@@ -143,13 +143,9 @@ private fun SenderRow(
         },
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
-            // No checkbox for a sender already opted out of: there is nothing left to send them,
-            // and offering the choice would invite re-texting a closed conversation.
-            if (sender.canReply) {
-                Checkbox(checked = selected, onCheckedChange = { onToggle() })
-            } else {
-                Spacer(Modifier.width(48.dp))
-            }
+            // Selectable whether or not a reply is due: an already-opted-out thread is still
+            // something the user wants dealt with, it just gets cleared instead of texted.
+            Checkbox(checked = selected, onCheckedChange = { onToggle() })
             Column(
                 Modifier.padding(start = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -245,6 +241,11 @@ private fun UnsubscribedRow(
             color = MaterialTheme.colorScheme.error,
         )
     }
+
+    Text(
+        "Select to clear this thread - no reply will be sent.",
+        style = MaterialTheme.typography.labelSmall,
+    )
 
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         if (sender.ignoredOptOut) {

@@ -62,6 +62,9 @@ fun ProgressScreen(progress: BatchProgress, contentPadding: PaddingValues) {
                         buildString {
                             append("${progress.completed} of ${progress.total} - ")
                             append("${progress.sentCount} sent, ${progress.failedCount} failed")
+                            if (progress.clearedCount > 0) {
+                                append(", ${progress.clearedCount} cleared")
+                            }
                             if (progress.unconfirmedCount > 0) {
                                 append(", ${progress.unconfirmedCount} unconfirmed")
                             }
@@ -123,6 +126,7 @@ fun ProgressScreen(progress: BatchProgress, contentPadding: PaddingValues) {
                             SendStatus.SENT -> "${outcome.keyword} ✓"
                             SendStatus.FAILED -> "failed"
                             SendStatus.UNCONFIRMED -> "unconfirmed"
+                            SendStatus.CLEARED -> "cleared"
                             SendStatus.CANCELLED -> "not sent"
                             else -> outcome.status.name.lowercase()
                         },

@@ -100,6 +100,7 @@ object Notifications {
             append("${progress.completed} of ${progress.total}")
             if (progress.failedCount > 0) append(" - ${progress.failedCount} failed")
             if (progress.unconfirmedCount > 0) append(" - ${progress.unconfirmedCount} unconfirmed")
+            if (progress.clearedCount > 0) append(" - ${progress.clearedCount} cleared")
             progress.currentAddress?.let { append(" - $it") }
         }
 

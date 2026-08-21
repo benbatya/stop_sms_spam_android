@@ -44,8 +44,11 @@ fun ReviewScreen(
     onKeywordChange: (SpamSender, String) -> Unit,
     onSettingsChange: (com.batya.stopsmsspam.data.AppSettings) -> Unit,
 ) {
-    val senders = state.selectedSenders
     val settings = state.settings
+    // Only senders that will actually be texted matter for pacing, throttling and the
+    // short-code warning; a cleared thread never touches the radio.
+    val senders = state.selectedForReply
+    val cleanupOnly = state.selectedForCleanup
     val throttled = SendPacing.exceedsFrameworkThrottle(senders.size, settings.delaySeconds)
     val noOptOut = senders.count { !it.hasOptOutLanguage }
     val shortCodes = senders.count { PhoneAddress.isShortCode(it.displayAddress) }
@@ -168,12 +171,36 @@ fun ReviewScreen(
             }
         }
 
-        item {
-            Text(
-                "Messages to send",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            )
+        if (cleanupOnly.isNotEmpty()) {
+            item {
+                Card(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            countOf(cleanupOnly.size, "thread") + " will be cleared, not replied to",
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            "These senders have already been sent an opt-out. Their threads are " +
+                                "marked read (or deleted) without sending anything, and they do " +
+                                "not count towards the delay.",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                        cleanupOnly.forEach {
+                            Text("• ${it.displayAddress}", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        }
+
+        if (senders.isNotEmpty()) {
+            item {
+                Text(
+                    "Messages to send",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
         }
 
         items(senders, key = { it.normalizedAddress }) { sender ->

@@ -42,6 +42,12 @@ data class UiState(
     val ready: Boolean get() = isDefaultSmsApp && hasSmsPermissions
     val selectedSenders: List<SpamSender> get() = senders.filter { it.normalizedAddress in selected }
 
+    /** Selected senders that will actually be texted - what the confirmation dialog counts. */
+    val selectedForReply: List<SpamSender> get() = selectedSenders.filter { it.canReply }
+
+    /** Selected senders that will only have their threads cleared. */
+    val selectedForCleanup: List<SpamSender> get() = selectedSenders.filter { !it.canReply }
+
     fun keywordFor(sender: SpamSender): String =
         keywordOverrides[sender.normalizedAddress] ?: sender.keyword.keyword
 }
@@ -104,7 +110,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val senders = repository.loadUnreadSenders(fallback, repository.loadOptOutStatus())
             _state.update { current ->
                 // Drop selections and edits for senders that are no longer unread.
-                val liveKeys = senders.filter { it.canReply }.map { it.normalizedAddress }.toSet()
+                val liveKeys = senders.map { it.normalizedAddress }.toSet()
                 current.copy(
                     loading = false,
                     senders = senders,
@@ -116,8 +122,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleSelection(sender: SpamSender) {
-        // Already opted out: there is nothing to send them, so the row is not selectable.
-        if (!sender.canReply) return
         _state.update { current ->
             val key = sender.normalizedAddress
             current.copy(
@@ -219,6 +223,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 keyword = current.keywordFor(sender),
                 messageIds = sender.messageIds,
                 subscriptionId = sender.subscriptionId,
+                // Already opted out of: the thread still gets cleaned up, but sending a second
+                // opt-out would be noise - and to a sender that ignored the first, useless.
+                sendReply = sender.canReply,
             )
         }
         if (plans.isEmpty()) return

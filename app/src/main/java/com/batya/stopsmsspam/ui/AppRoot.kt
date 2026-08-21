@@ -90,7 +90,8 @@ fun AppRoot(viewModel: MainViewModel) {
                 finished = progress.finished,
                 onReview = { viewModel.goTo(Screen.Review) },
                 onSend = {
-                    if (state.settings.dryRun) viewModel.startBatch() else confirmSend = true
+                    val sendsNothing = state.settings.dryRun || state.selectedForReply.isEmpty()
+                    if (sendsNothing) viewModel.startBatch() else confirmSend = true
                 },
                 onCancel = viewModel::cancelBatch,
                 onDone = viewModel::finishBatch,
@@ -133,13 +134,21 @@ fun AppRoot(viewModel: MainViewModel) {
     if (confirmSend) {
         AlertDialog(
             onDismissRequest = { confirmSend = false },
-            title = { Text("Send " + countOf(state.selected.size, "real text message") + "?") },
+            title = { Text("Send " + countOf(state.selectedForReply.size, "real text message") + "?") },
             text = {
                 Text(
-                    "Dry run is off. This will text " +
-                        countOf(state.selected.size, "number") +
-                        ", ${state.settings.delaySeconds}s apart, from your SIM. " +
-                        "Standard message rates apply.",
+                    buildString {
+                        append("Dry run is off. This will text ")
+                        append(countOf(state.selectedForReply.size, "number"))
+                        append(", ${state.settings.delaySeconds}s apart, from your SIM. ")
+                        append("Standard message rates apply.")
+                        if (state.selectedForCleanup.isNotEmpty()) {
+                            append(
+                                " The other ${state.selectedForCleanup.size} " +
+                                    "will be cleared without being texted.",
+                            )
+                        }
+                    },
                 )
             },
             confirmButton = {
@@ -190,8 +199,15 @@ private fun BottomActions(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
-                    if (state.settings.dryRun) "Start dry run (${state.selected.size})"
-                    else "Send " + countOf(state.selected.size, "opt-out reply", "opt-out replies"),
+                    when {
+                        state.settings.dryRun -> "Start dry run (${state.selected.size})"
+                        state.selectedForReply.isEmpty() ->
+                            "Clear " + countOf(state.selected.size, "thread")
+                        state.selectedForCleanup.isEmpty() ->
+                            "Send " + countOf(state.selectedForReply.size, "opt-out reply", "opt-out replies")
+                        else ->
+                            "Send ${state.selectedForReply.size}, clear ${state.selectedForCleanup.size}"
+                    },
                 )
             }
         }

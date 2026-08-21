@@ -87,6 +87,12 @@ data class ReplyPlan(
     val keyword: String,
     val messageIds: List<Long>,
     val subscriptionId: Int,
+    /**
+     * False for a sender already opted out of: the thread is still cleaned up, but no message is
+     * sent. Carried on the plan rather than re-derived in the service so that what the batch
+     * will do is fixed at the moment the user confirms it, not recomputed mid-run.
+     */
+    val sendReply: Boolean = true,
 )
 
 enum class SendStatus {
@@ -104,6 +110,13 @@ enum class SendStatus {
     UNCONFIRMED,
 
     CANCELLED,
+
+    /**
+     * Cleaned up without texting anyone. A sender that was already opted out of still gets
+     * selected and dealt with, but sending it a second STOP would be noise at best - so the
+     * batch marks its thread read (or deletes it) and moves on.
+     */
+    CLEARED,
 }
 
 data class SendOutcome(
@@ -127,5 +140,6 @@ data class BatchProgress(
     val sentCount: Int get() = outcomes.count { it.status == SendStatus.SENT }
     val failedCount: Int get() = outcomes.count { it.status == SendStatus.FAILED }
     val unconfirmedCount: Int get() = outcomes.count { it.status == SendStatus.UNCONFIRMED }
+    val clearedCount: Int get() = outcomes.count { it.status == SendStatus.CLEARED }
     val finished: Boolean get() = !running && outcomes.isNotEmpty()
 }

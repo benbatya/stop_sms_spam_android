@@ -10,15 +10,32 @@ help: the confirmation is a *newer, different* message.
 
 ## Three states, all derived from the provider
 
-| State | Means | Offered |
+| State | Means | What selecting it does |
 |---|---|---|
-| repliable | nothing sent to this sender | checkbox, suggested keyword |
-| awaiting confirmation | an opt-out went out, no acknowledgement | Mark read, Delete |
-| unsubscribed | the sender acknowledged it | Mark read, Delete |
-| **STOP ignored** | acknowledged, **then texted again** | **Block number**, Mark read, Delete |
+| repliable | nothing sent to this sender | sends the opt-out, then clears the thread |
+| awaiting confirmation | an opt-out went out, no acknowledgement | clears the thread, sends nothing |
+| unsubscribed | the sender acknowledged it | clears the thread, sends nothing |
+| **STOP ignored** | acknowledged, **then texted again** | clears the thread; also offers **Block number** |
 
 *Asked* and *answered* are kept apart deliberately. A sender that never replies stays in the
 second state rather than being reported as done, because nothing supports saying so.
+
+**Every state keeps its checkbox.** An earlier cut removed it from senders already opted out of,
+reasoning that there was nothing to send them. That was the wrong conclusion from the right
+premise: the user still wants those threads dealt with, they just want them cleared rather than
+texted. So selection is uniform and the *plan* carries what to do — `ReplyPlan.sendReply`, fixed
+when the batch is confirmed rather than recomputed mid-run.
+
+Consequences worth stating:
+
+- A cleared thread **does not consume the pacing delay**. Pacing protects the radio and the
+  carrier; clearing touches neither, so ten cleared threads and two sent ones cost one gap, not
+  eleven.
+- The throttle warning, the short-code warning and the confirmation dialog all count **only the
+  messages that leave the phone**. Counting cleared threads would warn about a burst that never
+  happens and ask the user to confirm texts that are not being sent.
+- The action button says what will happen — "Send 1, clear 1" — rather than a single total that
+  hides the split.
 
 ## Source of truth: the provider, not a side record
 
@@ -68,7 +85,7 @@ rather than silently doing nothing.
 
 ## Verified
 
-53 unit tests (up from 42). The ones that matter: a solicitation is not its own confirmation;
+56 unit tests (up from 42). The ones that matter: a solicitation is not its own confirmation;
 `isOptOutReply` accepts a bare keyword and rejects a sentence containing one; an unconfirmed
 opt-out cannot be "violated"; a sender that only repeats its acknowledgement is not accused of
 violating it.
@@ -78,6 +95,10 @@ End-to-end on the Android 12 emulator, with the Sent box carrying opt-outs from 
 - `43733` confirmed → shown **Unsubscribed – they confirmed on Aug 21, 2026**, no checkbox.
 - `22395` confirmed and then sent a fresh sale → shown **STOP IGNORED**, in error colours, with
   the explanation and a Block button.
+- A mixed batch with `62626` (repliable) and `43733` (already unsubscribed) selected together
+  reported **"Send 1, clear 1"**, and the Sent box grew by exactly **one** row — to `62626`.
+  `43733` still shows a single outgoing message, its original `UNSUB`, and both threads left the
+  unread list.
 - Tapping **Block number** cleared it from unread. Blocking was then proved functionally rather
   than by reading the list back (that read is itself privileged): a further message from `22395`
   **never reached the provider**, while a control message from `55411` sent at the same moment
