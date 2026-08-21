@@ -12,8 +12,8 @@ import android.provider.Telephony
  * The role is the whole reason this app can mark spam read and file its own replies into the
  * real threads - but it also makes the app responsible for every incoming message, so the
  * intended pattern is to take the role, clean up, and hand it straight back. There is no API to
- * hand it back programmatically, so [handBackIntent] sends the user to the settings screen where
- * they can reselect their normal messaging app.
+ * hand it back programmatically - and, as [handBackIntent] documents, no way to open the
+ * role-specific picker either - so the handback goes via the system default-apps screen.
  */
 class SmsRoleManager(private val context: Context) {
 
@@ -54,8 +54,26 @@ class SmsRoleManager(private val context: Context) {
     }
 
     /**
-     * Opens the system default-apps screen. Android offers no way for an app to give the SMS
-     * role to a specific other app, so the handback is necessarily a manual step.
+     * Opens the system default-apps screen, where the user reselects their normal messaging app.
+     *
+     * This is deliberately **not** the same dialog as [requestRoleIntent], though it looks like
+     * it should be. Every route to the role-specific SMS picker is closed to a normal app;
+     * all three were tried against Android 16 and each fails differently:
+     *
+     *  - `createRequestRoleIntent` (the grant dialog) short-circuits when the caller already
+     *    holds the role - RequestRoleActivity logs "Application is already a role holder",
+     *    returns RESULT_OK and finishes without drawing anything. This button only exists while
+     *    we hold the role, so it would never show UI.
+     *  - `ACTION_MANAGE_DEFAULT_APP` + `EXTRA_ROLE_NAME` opens exactly the right "Default SMS
+     *    app" picker, but requires the privileged `MANAGE_ROLE_HOLDERS` permission and throws
+     *    SecurityException from a normal app. It resolves fine through PackageManager, so a
+     *    resolveActivity() guard does not protect against it.
+     *  - `Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT`, the legacy change-default dialog, is
+     *    blocked by PermissionPolicyService ("Action Removed", start result 102). It throws
+     *    nothing and shows nothing, so a try/catch fallback never fires - the worst failure of
+     *    the three, since the button looks wired up and silently does nothing.
+     *
+     * The default-apps list costs one extra tap and actually works. Do not "fix" this.
      */
     fun handBackIntent(): Intent =
         Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
