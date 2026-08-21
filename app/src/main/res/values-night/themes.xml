@@ -1,0 +1,7 @@
+<resources>
+    <!--
+      Dark counterpart of the base theme. Without it the window background stays light and the
+      app flashes white before Compose draws when the phone is in dark mode.
+    -->
+    <style name="Theme.StopSmsSpam" parent="android:Theme.Material.NoActionBar" />
+</resources>

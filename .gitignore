@@ -1,0 +1,17 @@
+# Gradle / Android build output. These patterns are deliberately unanchored so they
+# match at any depth - a leading-slash "/build" only covers the root project and
+# lets app/build (hundreds of MB of APKs and intermediates) slip into the commit.
+build/
+.gradle/
+.cxx/
+.externalNativeBuild/
+captures/
+
+# Machine-specific: points at this checkout's SDK install.
+local.properties
+
+# IDE
+*.iml
+.idea/
+
+.DS_Store
