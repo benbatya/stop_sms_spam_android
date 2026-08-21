@@ -13,10 +13,15 @@ import com.batya.stopsmsspam.data.model.SpamSender
 object SenderGrouping {
 
     /**
+     * @param optedOut senders already sent a confirmed opt-out, keyed by normalized address.
      * @param messages unread messages, newest first. The first message seen for a sender is the
      *  one quoted in the UI and the one its keyword is detected from.
      */
-    fun group(messages: List<SpamMessage>, fallbackKeyword: String): List<SpamSender> {
+    fun group(
+        messages: List<SpamMessage>,
+        fallbackKeyword: String,
+        optedOut: Map<String, OptOutRecord> = emptyMap(),
+    ): List<SpamSender> {
         val builders = LinkedHashMap<String, Builder>()
 
         for (message in messages) {
@@ -44,6 +49,7 @@ object SenderGrouping {
                 latestDate = builder.latestDate,
                 subscriptionId = builder.subscriptionId,
                 keyword = OptOutKeywordDetector.detectOrFallback(builder.latestBody, fallbackKeyword),
+                optedOut = optedOut[builder.normalizedAddress],
             )
         }
     }

@@ -1,5 +1,7 @@
 package com.batya.stopsmsspam
 
+import com.batya.stopsmsspam.data.OptOutRecord
+import com.batya.stopsmsspam.data.PhoneAddress
 import com.batya.stopsmsspam.data.SenderGrouping
 import com.batya.stopsmsspam.data.model.KeywordConfidence
 import com.batya.stopsmsspam.data.model.SpamMessage
@@ -99,6 +101,53 @@ class SenderGroupingTest {
         val order = SenderGrouping.group(messages, "STOP").map { it.latestDate }
 
         assertEquals(listOf(300L, 200L, 100L), order)
+    }
+
+    @Test
+    fun `marks a sender unsubscribed once an opt-out has been sent to them`() {
+        // The confirmation a sender sends back ("you have been unsubscribed") arrives as a new
+        // unread message from the same address. Without the record it would look like fresh spam.
+        val messages = listOf(
+            message(1, "22395", body = "You have been unsubscribed from ACME alerts."),
+            message(2, "43733", body = "Deals daily! Reply UNSUB to be removed"),
+        )
+        val log = mapOf(
+            PhoneAddress.normalize("22395") to OptOutRecord("STOP", 1_700_000_000_000),
+        )
+
+        val senders = SenderGrouping.group(messages, "STOP", log).associateBy { it.displayAddress }
+
+        assertTrue(senders.getValue("22395").isUnsubscribed)
+        assertFalse(senders.getValue("22395").canReply)
+        assertEquals("STOP", senders.getValue("22395").optedOut?.keyword)
+
+        assertFalse(senders.getValue("43733").isUnsubscribed)
+        assertTrue(senders.getValue("43733").canReply)
+    }
+
+    @Test
+    fun `recognises an unsubscribed sender across address formats`() {
+        // The opt-out went to "+1 555-123-4567"; the confirmation comes back as "5551234567".
+        val log = mapOf(
+            PhoneAddress.normalize("+1 555-123-4567") to OptOutRecord("STOP", 1L),
+        )
+        val sender = SenderGrouping.group(
+            listOf(message(1, "5551234567", body = "You are unsubscribed")),
+            "STOP",
+            log,
+        ).single()
+
+        assertTrue(sender.isUnsubscribed)
+    }
+
+    @Test
+    fun `an empty log leaves every sender repliable`() {
+        val senders = SenderGrouping.group(
+            listOf(message(1, "22395"), message(2, "43733")),
+            "STOP",
+        )
+        assertTrue(senders.all { it.canReply })
+        assertTrue(senders.none { it.isUnsubscribed })
     }
 
     @Test

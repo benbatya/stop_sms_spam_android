@@ -113,6 +113,9 @@ fun AppRoot(viewModel: MainViewModel) {
                 onToggle = viewModel::toggleSelection,
                 onSelectAllWithOptOut = viewModel::selectAllWithOptOut,
                 onClearSelection = viewModel::clearSelection,
+                onMarkRead = viewModel::markRead,
+                onDelete = viewModel::deleteMessages,
+                onMarkAllUnsubscribedRead = viewModel::markAllUnsubscribedRead,
             )
 
             Screen.Review -> ReviewScreen(

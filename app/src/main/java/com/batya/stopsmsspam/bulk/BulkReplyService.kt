@@ -7,6 +7,7 @@ import android.content.pm.ServiceInfo
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.ServiceCompat
+import com.batya.stopsmsspam.data.OptOutLog
 import com.batya.stopsmsspam.data.SmsRepository
 import com.batya.stopsmsspam.data.model.BatchProgress
 import com.batya.stopsmsspam.data.model.SendOutcome
@@ -90,6 +91,7 @@ class BulkReplyService : Service() {
 
     private suspend fun runBatch(snapshot: BatchSnapshot) {
         val repository = SmsRepository(this)
+        val optOutLog = OptOutLog(this)
         val store = BatchStore(this)
         val outcomes = snapshot.outcomes.toMutableList()
 
@@ -128,6 +130,10 @@ class BulkReplyService : Service() {
                     )
                 ) {
                     is SendResult.Success -> {
+                        // Only a confirmed send is recorded: this is what stops the app from
+                        // offering to text the sender again when their "you have been
+                        // unsubscribed" confirmation arrives as a new unread message.
+                        optOutLog.record(plan.address, plan.keyword, System.currentTimeMillis())
                         applyPostSend(repository, snapshot, plan.messageIds)
                         SendOutcome(
                             address = plan.address,

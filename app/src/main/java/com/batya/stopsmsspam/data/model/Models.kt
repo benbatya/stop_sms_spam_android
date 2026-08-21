@@ -1,5 +1,7 @@
 package com.batya.stopsmsspam.data.model
 
+import com.batya.stopsmsspam.data.OptOutRecord
+
 /** A single unread SMS as stored in the system Telephony provider. */
 data class SpamMessage(
     val id: Long,
@@ -41,8 +43,20 @@ data class SpamSender(
     val latestDate: Long,
     val subscriptionId: Int,
     val keyword: DetectedKeyword,
+    /**
+     * Set when this app has already sent this sender a confirmed opt-out. Their later messages -
+     * typically the "you have been unsubscribed" confirmation - still arrive, but replying again
+     * would re-open a conversation the user just closed.
+     */
+    val optedOut: OptOutRecord? = null,
 ) {
     val messageCount: Int get() = messageIds.size
+
+    /** True once an opt-out has been sent and confirmed; such senders are not replied to again. */
+    val isUnsubscribed: Boolean get() = optedOut != null
+
+    /** Whether the UI should offer to send this sender an opt-out at all. */
+    val canReply: Boolean get() = !isUnsubscribed
 
     /**
      * False when the sender never told us how to opt out. Replying to these is usually a bad

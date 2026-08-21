@@ -11,6 +11,7 @@ import com.batya.stopsmsspam.bulk.BulkReplyController
 import com.batya.stopsmsspam.bulk.BulkReplyService
 import com.batya.stopsmsspam.data.AppSettings
 import com.batya.stopsmsspam.data.SettingsStore
+import com.batya.stopsmsspam.data.OptOutLog
 import com.batya.stopsmsspam.data.SmsRepository
 import com.batya.stopsmsspam.data.model.ReplyPlan
 import com.batya.stopsmsspam.data.model.SpamSender
@@ -47,6 +48,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val settingsStore = SettingsStore(application)
     private val repository = SmsRepository(application)
+    private val optOutLog = OptOutLog(application)
     private val roleManager = SmsRoleManager(application)
 
     private val _state = MutableStateFlow(UiState())
@@ -97,10 +99,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _state.update { it.copy(loading = true) }
             val fallback = settingsStore.current().fallbackKeyword
-            val senders = repository.loadUnreadSenders(fallback)
+            val senders = repository.loadUnreadSenders(fallback, optOutLog.current())
             _state.update { current ->
                 // Drop selections and edits for senders that are no longer unread.
-                val liveKeys = senders.map { it.normalizedAddress }.toSet()
+                val liveKeys = senders.filter { it.canReply }.map { it.normalizedAddress }.toSet()
                 current.copy(
                     loading = false,
                     senders = senders,
@@ -112,6 +114,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleSelection(sender: SpamSender) {
+        // Already opted out: there is nothing to send them, so the row is not selectable.
+        if (!sender.canReply) return
         _state.update { current ->
             val key = sender.normalizedAddress
             current.copy(
@@ -120,14 +124,54 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Selects only senders that actually published an opt-out keyword. */
+    /**
+     * Selects senders that published an opt-out keyword and have not already been opted out of.
+     * Both exclusions matter: the first keeps the user from replying to scam numbers, the second
+     * from re-texting a sender whose only new message is their own unsubscribe confirmation.
+     */
     fun selectAllWithOptOut() {
         _state.update { current ->
             current.copy(
-                selected = current.senders.filter { it.hasOptOutLanguage }
+                selected = current.senders.filter { it.hasOptOutLanguage && it.canReply }
                     .map { it.normalizedAddress }
                     .toSet(),
             )
+        }
+    }
+
+    /** Clears an already-unsubscribed sender's messages from the unread list. */
+    fun markRead(sender: SpamSender) {
+        viewModelScope.launch {
+            repository.markRead(sender.messageIds)
+            refreshInbox()
+        }
+    }
+
+    /** Deletes an already-unsubscribed sender's messages outright. */
+    fun deleteMessages(sender: SpamSender) {
+        viewModelScope.launch {
+            repository.delete(sender.messageIds)
+            refreshInbox()
+        }
+    }
+
+    /** Bulk version of [markRead] for every sender already opted out of. */
+    fun markAllUnsubscribedRead() {
+        viewModelScope.launch {
+            val ids = _state.value.senders.filter { it.isUnsubscribed }.flatMap { it.messageIds }
+            if (ids.isNotEmpty()) repository.markRead(ids)
+            refreshInbox()
+        }
+    }
+
+    /**
+     * Forgets that a sender was opted out of, so the app will offer to send another. For a
+     * sender that keeps texting after being told to stop.
+     */
+    fun reopenSender(sender: SpamSender) {
+        viewModelScope.launch {
+            optOutLog.forget(sender.displayAddress)
+            refreshInbox()
         }
     }
 

@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -37,6 +39,9 @@ fun InboxScreen(
     onToggle: (SpamSender) -> Unit,
     onSelectAllWithOptOut: () -> Unit,
     onClearSelection: () -> Unit,
+    onMarkRead: (SpamSender) -> Unit,
+    onDelete: (SpamSender) -> Unit,
+    onMarkAllUnsubscribedRead: () -> Unit,
 ) {
     if (state.loading && state.senders.isEmpty()) {
         Column(
@@ -77,12 +82,38 @@ fun InboxScreen(
             }
         }
 
+        val unsubscribedCount = state.senders.count { it.isUnsubscribed }
+        if (unsubscribedCount > 0) {
+            item {
+                Card(
+                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    ),
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text(
+                            countOf(unsubscribedCount, "sender") +
+                                " already unsubscribed. Their newer messages are usually just " +
+                                "the confirmation - clear them rather than replying again.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        TextButton(onClick = onMarkAllUnsubscribedRead) {
+                            Text("Mark all as read")
+                        }
+                    }
+                }
+            }
+        }
+
         items(state.senders, key = { it.normalizedAddress }) { sender ->
             SenderRow(
                 sender = sender,
                 keyword = state.keywordFor(sender),
                 selected = sender.normalizedAddress in state.selected,
                 onToggle = { onToggle(sender) },
+                onMarkRead = { onMarkRead(sender) },
+                onDelete = { onDelete(sender) },
             )
         }
     }
@@ -94,12 +125,14 @@ private fun SenderRow(
     keyword: String,
     selected: Boolean,
     onToggle: () -> Unit,
+    onMarkRead: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp)
-            .clickable(onClick = onToggle),
+            .then(if (sender.canReply) Modifier.clickable(onClick = onToggle) else Modifier),
         colors = if (selected) {
             CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
         } else {
@@ -107,7 +140,13 @@ private fun SenderRow(
         },
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
-            Checkbox(checked = selected, onCheckedChange = { onToggle() })
+            // No checkbox for a sender already opted out of: there is nothing left to send them,
+            // and offering the choice would invite re-texting a closed conversation.
+            if (sender.canReply) {
+                Checkbox(checked = selected, onCheckedChange = { onToggle() })
+            } else {
+                Spacer(Modifier.width(48.dp))
+            }
             Column(
                 Modifier.padding(start = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -138,9 +177,46 @@ private fun SenderRow(
                     overflow = TextOverflow.Ellipsis,
                 )
 
-                KeywordChip(keyword, sender.keyword.confidence)
+                if (sender.isUnsubscribed) {
+                    UnsubscribedRow(sender, onMarkRead = onMarkRead, onDelete = onDelete)
+                } else {
+                    KeywordChip(keyword, sender.keyword.confidence)
+                }
             }
         }
+    }
+}
+
+/**
+ * What an already-unsubscribed sender offers instead of a reply: say when the opt-out went out,
+ * and give the only two actions that make sense afterwards.
+ */
+@Composable
+private fun UnsubscribedRow(
+    sender: SpamSender,
+    onMarkRead: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val record = sender.optedOut ?: return
+    val sentOn = DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(record.timestampMillis))
+
+    AssistChip(
+        onClick = {},
+        enabled = false,
+        label = {
+            Text(
+                "Unsubscribed - sent \"${record.keyword}\" on $sentOn",
+                style = MaterialTheme.typography.labelSmall,
+            )
+        },
+        colors = AssistChipDefaults.assistChipColors(
+            disabledContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+            disabledLabelColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        ),
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        TextButton(onClick = onMarkRead) { Text("Mark read") }
+        TextButton(onClick = onDelete) { Text("Delete") }
     }
 }
 

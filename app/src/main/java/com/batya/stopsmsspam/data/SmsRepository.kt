@@ -27,7 +27,10 @@ class SmsRepository(private val context: Context) {
      * Every unread inbox message, collapsed to one row per sender so a number that texted eight
      * times receives exactly one opt-out reply.
      */
-    suspend fun loadUnreadSenders(fallbackKeyword: String): List<SpamSender> =
+    suspend fun loadUnreadSenders(
+        fallbackKeyword: String,
+        optedOut: Map<String, OptOutRecord> = emptyMap(),
+    ): List<SpamSender> =
         withContext(Dispatchers.IO) {
             if (!canReadSms()) return@withContext emptyList()
 
@@ -70,7 +73,7 @@ class SmsRepository(private val context: Context) {
                 }
             }
 
-            SenderGrouping.group(messages, fallbackKeyword)
+            SenderGrouping.group(messages, fallbackKeyword, optedOut)
         }
 
     /**
