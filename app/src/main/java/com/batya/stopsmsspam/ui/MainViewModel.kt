@@ -11,7 +11,7 @@ import com.batya.stopsmsspam.bulk.BulkReplyController
 import com.batya.stopsmsspam.bulk.BulkReplyService
 import com.batya.stopsmsspam.data.AppSettings
 import com.batya.stopsmsspam.data.SettingsStore
-import com.batya.stopsmsspam.data.OptOutLog
+import com.batya.stopsmsspam.data.BlockedNumbers
 import com.batya.stopsmsspam.data.SmsRepository
 import com.batya.stopsmsspam.data.model.ReplyPlan
 import com.batya.stopsmsspam.data.model.SpamSender
@@ -36,6 +36,8 @@ data class UiState(
     /** User edits to the detected keyword, keyed by `SpamSender.normalizedAddress`. */
     val keywordOverrides: Map<String, String> = emptyMap(),
     val settings: AppSettings = AppSettings(),
+    /** Address whose block attempt failed, so the UI can say so rather than silently no-op. */
+    val lastBlockFailed: String? = null,
 ) {
     val ready: Boolean get() = isDefaultSmsApp && hasSmsPermissions
     val selectedSenders: List<SpamSender> get() = senders.filter { it.normalizedAddress in selected }
@@ -48,7 +50,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val settingsStore = SettingsStore(application)
     private val repository = SmsRepository(application)
-    private val optOutLog = OptOutLog(application)
+    private val blockedNumbers = BlockedNumbers(application)
     private val roleManager = SmsRoleManager(application)
 
     private val _state = MutableStateFlow(UiState())
@@ -99,7 +101,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _state.update { it.copy(loading = true) }
             val fallback = settingsStore.current().fallbackKeyword
-            val senders = repository.loadUnreadSenders(fallback, optOutLog.current())
+            val senders = repository.loadUnreadSenders(fallback, repository.loadOptOutStatus())
             _state.update { current ->
                 // Drop selections and edits for senders that are no longer unread.
                 val liveKeys = senders.filter { it.canReply }.map { it.normalizedAddress }.toSet()
@@ -155,7 +157,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Bulk version of [markRead] for every sender already opted out of. */
     fun markAllUnsubscribedRead() {
         viewModelScope.launch {
             val ids = _state.value.senders.filter { it.isUnsubscribed }.flatMap { it.messageIds }
@@ -165,15 +166,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Forgets that a sender was opted out of, so the app will offer to send another. For a
-     * sender that keeps texting after being told to stop.
+     * Blocks a sender that confirmed the opt-out and then texted anyway, and clears its messages.
+     *
+     * Deliberately one sender at a time and never part of a batch: blocking is system-wide and
+     * outlives this app, so it should be a decision the user makes about a specific number.
      */
-    fun reopenSender(sender: SpamSender) {
+    fun blockSender(sender: SpamSender) {
         viewModelScope.launch {
-            optOutLog.forget(sender.displayAddress)
+            val blocked = blockedNumbers.block(sender.displayAddress)
+            _state.update { it.copy(lastBlockFailed = if (blocked) null else sender.displayAddress) }
+            if (blocked) repository.markRead(sender.messageIds)
             refreshInbox()
         }
     }
+
+    fun dismissBlockError() {
+        _state.update { it.copy(lastBlockFailed = null) }
+    }
+
+    /** Bulk mark-read for senders that acknowledged the opt-out. */
 
     fun clearSelection() {
         _state.update { it.copy(selected = emptySet()) }

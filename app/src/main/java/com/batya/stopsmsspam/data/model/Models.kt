@@ -1,6 +1,6 @@
 package com.batya.stopsmsspam.data.model
 
-import com.batya.stopsmsspam.data.OptOutRecord
+import com.batya.stopsmsspam.data.OptOutStatus
 
 /** A single unread SMS as stored in the system Telephony provider. */
 data class SpamMessage(
@@ -44,19 +44,35 @@ data class SpamSender(
     val subscriptionId: Int,
     val keyword: DetectedKeyword,
     /**
-     * Set when this app has already sent this sender a confirmed opt-out. Their later messages -
-     * typically the "you have been unsubscribed" confirmation - still arrive, but replying again
-     * would re-open a conversation the user just closed.
+     * Set when the message history shows this sender was already sent an opt-out. Their later
+     * messages - typically the "you have been unsubscribed" confirmation - still arrive, but
+     * replying again would re-open a conversation that is already closed.
      */
-    val optedOut: OptOutRecord? = null,
+    val optedOut: OptOutStatus? = null,
+    /**
+     * When this sender texted again *after* confirming the opt-out. Set only for a confirmed
+     * opt-out: without the acknowledgement there is no promise to have broken, and calling that
+     * a violation would put a scarlet letter on senders that were merely slow to answer.
+     */
+    val optOutViolatedAt: Long? = null,
 ) {
     val messageCount: Int get() = messageIds.size
 
-    /** True once an opt-out has been sent and confirmed; such senders are not replied to again. */
-    val isUnsubscribed: Boolean get() = optedOut != null
+    /** The sender acknowledged the opt-out: asked *and* answered. */
+    val isUnsubscribed: Boolean get() = optedOut?.isConfirmed == true
+
+    /** An opt-out went out, but this sender has not acknowledged it. */
+    val awaitingConfirmation: Boolean get() = optedOut != null && !optedOut.isConfirmed
 
     /** Whether the UI should offer to send this sender an opt-out at all. */
-    val canReply: Boolean get() = !isUnsubscribed
+    val canReply: Boolean get() = optedOut == null
+
+    /**
+     * The sender said it had unsubscribed the user and then messaged them anyway. Replying again
+     * is pointless - the system already proved it ignores its own opt-out - so this is the one
+     * state where the app offers to block the number instead.
+     */
+    val ignoredOptOut: Boolean get() = optOutViolatedAt != null
 
     /**
      * False when the sender never told us how to opt out. Replying to these is usually a bad

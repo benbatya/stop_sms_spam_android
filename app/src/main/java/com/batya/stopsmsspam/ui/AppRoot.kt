@@ -116,6 +116,7 @@ fun AppRoot(viewModel: MainViewModel) {
                 onMarkRead = viewModel::markRead,
                 onDelete = viewModel::deleteMessages,
                 onMarkAllUnsubscribedRead = viewModel::markAllUnsubscribedRead,
+                onBlock = viewModel::blockSender,
             )
 
             Screen.Review -> ReviewScreen(

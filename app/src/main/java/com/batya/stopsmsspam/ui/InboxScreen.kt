@@ -42,6 +42,7 @@ fun InboxScreen(
     onMarkRead: (SpamSender) -> Unit,
     onDelete: (SpamSender) -> Unit,
     onMarkAllUnsubscribedRead: () -> Unit,
+    onBlock: (SpamSender) -> Unit,
 ) {
     if (state.loading && state.senders.isEmpty()) {
         Column(
@@ -114,6 +115,7 @@ fun InboxScreen(
                 onToggle = { onToggle(sender) },
                 onMarkRead = { onMarkRead(sender) },
                 onDelete = { onDelete(sender) },
+                onBlock = { onBlock(sender) },
             )
         }
     }
@@ -127,6 +129,7 @@ private fun SenderRow(
     onToggle: () -> Unit,
     onMarkRead: () -> Unit,
     onDelete: () -> Unit,
+    onBlock: () -> Unit,
 ) {
     Card(
         modifier = Modifier
@@ -178,7 +181,7 @@ private fun SenderRow(
                 )
 
                 if (sender.isUnsubscribed) {
-                    UnsubscribedRow(sender, onMarkRead = onMarkRead, onDelete = onDelete)
+                    UnsubscribedRow(sender, onMarkRead, onDelete, onBlock)
                 } else {
                     KeywordChip(keyword, sender.keyword.confidence)
                 }
@@ -188,33 +191,65 @@ private fun SenderRow(
 }
 
 /**
- * What an already-unsubscribed sender offers instead of a reply: say when the opt-out went out,
- * and give the only two actions that make sense afterwards.
+ * What a sender that has already been told to stop offers instead of a reply.
+ *
+ * The two states are shown apart on purpose. A confirmed opt-out is finished business; one the
+ * sender never acknowledged is not, and collapsing them would tell the user a sender is done
+ * with them when nothing supports that.
  */
 @Composable
 private fun UnsubscribedRow(
     sender: SpamSender,
     onMarkRead: () -> Unit,
     onDelete: () -> Unit,
+    onBlock: () -> Unit,
 ) {
-    val record = sender.optedOut ?: return
-    val sentOn = DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(record.timestampMillis))
+    val status = sender.optedOut ?: return
+    val dates = DateFormat.getDateInstance(DateFormat.MEDIUM)
+    val sentOn = dates.format(Date(status.sentAtMillis))
+
+    val label = when {
+        sender.ignoredOptOut ->
+            "STOP IGNORED - confirmed unsubscribed, then texted again " +
+                dates.format(Date(sender.optOutViolatedAt!!))
+        status.isConfirmed ->
+            "Unsubscribed - they confirmed on ${dates.format(Date(status.confirmedAtMillis!!))}"
+        else -> "\"${status.keyword}\" sent $sentOn - no confirmation yet"
+    }
 
     AssistChip(
         onClick = {},
         enabled = false,
-        label = {
-            Text(
-                "Unsubscribed - sent \"${record.keyword}\" on $sentOn",
-                style = MaterialTheme.typography.labelSmall,
+        label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+        colors = when {
+            sender.ignoredOptOut -> AssistChipDefaults.assistChipColors(
+                disabledContainerColor = MaterialTheme.colorScheme.errorContainer,
+                disabledLabelColor = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            status.isConfirmed -> AssistChipDefaults.assistChipColors(
+                disabledContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                disabledLabelColor = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+            else -> AssistChipDefaults.assistChipColors(
+                disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         },
-        colors = AssistChipDefaults.assistChipColors(
-            disabledContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
-            disabledLabelColor = MaterialTheme.colorScheme.onTertiaryContainer,
-        ),
     )
+
+    if (sender.ignoredOptOut) {
+        Text(
+            "This sender agreed to stop and then messaged you anyway. Replying again will not " +
+                "help - it already ignored its own opt-out.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (sender.ignoredOptOut) {
+            TextButton(onClick = onBlock) { Text("Block number") }
+        }
         TextButton(onClick = onMarkRead) { Text("Mark read") }
         TextButton(onClick = onDelete) { Text("Delete") }
     }

@@ -1,69 +1,91 @@
-# Track unsubscribed senders, and stop offering to re-reply
+# Track opt-out state from the message history, and escalate senders that ignore it
 
 ## The problem, from manual testing on a real phone
 
 Opting out is not the end of the conversation. A sender that honours STOP usually **replies to
-confirm it** — "You have been unsubscribed from ACME alerts" — and that confirmation arrives as a
-new unread SMS from the same address.
+confirm it** — "You have been unsubscribed" — and that confirmation arrives as a new unread SMS
+from the same address. The app, having no notion of having opted out, listed that sender again as
+fresh spam and invited the user to text them a second time. Marking the originals read did not
+help: the confirmation is a *newer, different* message.
 
-The app had no memory of having opted out, so it listed that sender again as fresh spam, with a
-checkbox and a suggested keyword, inviting the user to text them a second time. Marking the
-original messages read did not help: the confirmation is a *different, newer* message.
+## Three states, all derived from the provider
 
-At best that is noise. At worst it re-opens a conversation the user just closed.
+| State | Means | Offered |
+|---|---|---|
+| repliable | nothing sent to this sender | checkbox, suggested keyword |
+| awaiting confirmation | an opt-out went out, no acknowledgement | Mark read, Delete |
+| unsubscribed | the sender acknowledged it | Mark read, Delete |
+| **STOP ignored** | acknowledged, **then texted again** | **Block number**, Mark read, Delete |
 
-## What changed
+*Asked* and *answered* are kept apart deliberately. A sender that never replies stays in the
+second state rather than being reported as done, because nothing supports saying so.
 
-**`OptOutLog`** — a DataStore record of senders this app has sent a confirmed opt-out to, keyed by
-the same normalized address the grouping uses, holding the keyword and the timestamp.
+## Source of truth: the provider, not a side record
 
-**Only confirmed sends are recorded.** A dry run does not write to it, and neither does an
-`UNCONFIRMED` send. If Android never told us the message went out, calling the sender
-unsubscribed would be a guess — and the wrong direction to guess in, since it would suppress a
-retry the user may still need.
+The first implementation kept a DataStore log of what the app had sent. That was replaced, on
+review, with derivation from the Telephony provider on each load:
 
-**Unsubscribed senders are not repliable.** `SpamSender.canReply` is false for them:
-`selectAllWithOptOut` skips them, `toggleSelection` refuses them, and a stale selection is
-dropped on refresh. In the list they lose their checkbox entirely rather than merely being
-discouraged — there is nothing to send, so offering the choice would be the invitation this
-change exists to remove.
+- **Did we ask?** A Sent-box message to that address whose body *is* an opt-out keyword.
+- **Did they answer?** An inbox message from that address, **dated after** ours, matching
+  confirmation language.
 
-**They get the two actions that do make sense:** *Mark read* and *Delete*, per sender, plus a
-banner with *Mark all as read* when any exist, since the confirmations arrive in bulk after a
-batch. The badge says what was sent and when — "Unsubscribed — sent "STOP" on Aug 21, 2026" — so
-the row explains itself rather than just being inert.
+This is the better source of truth, not merely a tidier one. It makes an opt-out the user sent
+from their **normal messaging app** count exactly as much as one this app sent — the gap the log
+version had to declare and accept. It cannot drift from the messages, and it survives reinstall,
+because the messages do.
 
-**`reopenSender`** clears a sender's record, for one that keeps texting after being told to stop.
-Wired in the ViewModel; no UI entry point yet, deliberately — the case is real but rare, and
-guessing at its UI without having hit it would be inventing a design.
+The objection raised against it earlier — that the app deliberately files no Sent row for an
+`UNCONFIRMED` send — turned out to argue *for* it. An unconfirmed send is precisely one we cannot
+claim went out, so its absence from the Sent box is the correct answer, not a gap.
 
-## Why a record rather than reading the Sent box
+Cost, accepted: two provider queries per load instead of one preference read. The second is
+bounded by the first — no opt-outs sent means no second query, and otherwise only messages newer
+than the earliest opt-out can confirm one.
 
-Scanning `content://sms/sent` for a matching keyword would need no new storage and would also
-catch STOPs the user sent from their normal messaging app — genuinely appealing.
+## The distinction the whole thing rests on: tense
 
-It was not used because the two are not the same fact. The Sent box says *a message was filed*;
-the log says *this app sent this keyword and the radio confirmed it*. The app deliberately does
-not write a Sent row for an `UNCONFIRMED` send, so inferring from Sent would silently inherit
-that gap, and a body that happens to equal "STOP" would read as an opt-out it was not.
+Solicitations invite the action — "reply STOP to **unsubscribe**". Acknowledgements report it
+done — "you have been **unsubscribed**". Matching the past tense is what stops every piece of
+spam from confirming its own opt-out. Getting this wrong in the permissive direction would mark
+senders unsubscribed before anything was sent, so the confirmation patterns are deliberately
+narrow, and a missed confirmation merely leaves a sender "awaiting confirmation" until it goes
+quiet.
 
-Known gap, accepted: an opt-out the user sent from another app is invisible here, so the app may
-offer to send a duplicate. A duplicate STOP is harmless; wrongly suppressing a needed one is not.
+The same care applies to reading the Sent box: an opt-out reply is the bare keyword and nothing
+else, so `isOptOutReply` requires a single token. "did the STOP work?" is a message about an
+opt-out, not one.
+
+## Blocking
+
+A sender that confirmed and then texted anyway has already proved it ignores its own opt-out, so
+replying again is pointless. That row gets **Block number**, which writes to the system
+blocked-numbers list — restricted to the default SMS app, dialer and carrier apps, which this app
+qualifies as *exactly while it holds the SMS role*.
+
+Always one sender at a time, never part of a batch: blocking is system-wide and outlives this
+app, so it should be a decision about a specific number. A failed block sets `lastBlockFailed`
+rather than silently doing nothing.
 
 ## Verified
 
-45 unit tests, up from 42 — three new: a sender in the log is marked unsubscribed and not
-repliable, recognition works across address formats (opt-out sent to `+1 555-123-4567`,
-confirmation arrives from `5551234567`), and an empty log leaves everything repliable.
+53 unit tests (up from 42). The ones that matter: a solicitation is not its own confirmation;
+`isOptOutReply` accepts a bare keyword and rejects a sentence containing one; an unconfirmed
+opt-out cannot be "violated"; a sender that only repeats its acknowledgement is not accused of
+violating it.
 
-End-to-end on the Android 12 emulator: ran a real batch, confirmed `optouts.preferences_pb`
-holds `{"22395":{"k":"STOP","t":...},...}`, then injected the confirmation message from 22395.
-The app showed it with the Unsubscribed badge, no checkbox, and Mark read / Delete, while an
-untouched sender (55411) kept its checkbox and suggested keyword. *Mark all as read* banner
-appeared for the 2 unsubscribed senders. Tapping *Mark read* cleared that sender's messages and
-left the other two alone. No crashes.
+End-to-end on the Android 12 emulator, with the Sent box carrying opt-outs from earlier runs:
 
-## Out of scope
+- `43733` confirmed → shown **Unsubscribed – they confirmed on Aug 21, 2026**, no checkbox.
+- `22395` confirmed and then sent a fresh sale → shown **STOP IGNORED**, in error colours, with
+  the explanation and a Block button.
+- Tapping **Block number** cleared it from unread. Blocking was then proved functionally rather
+  than by reading the list back (that read is itself privileged): a further message from `22395`
+  **never reached the provider**, while a control message from `55411` sent at the same moment
+  arrived normally.
 
-- Any change to detection or pacing.
-- A UI entry point for `reopenSender` (see above).
+## Known limitation
+
+Opt-out state is derived from the whole message history with no lookback window, so a sender
+opted out of long ago can never be re-sent to from this app. If a sender goes quiet for a year
+and returns, the user would have to reply from their normal messaging app. A time bound would fix
+it but is a policy guess; leaving it until the case is actually hit.

@@ -111,6 +111,24 @@ object OptOutKeywordDetector {
         return null
     }
 
+    /**
+     * Whether an outgoing message body *is* an opt-out reply, rather than ordinary conversation.
+     *
+     * Used to find opt-outs in the Sent box, which is how the app knows a sender has already
+     * been told to stop - including ones sent from a different messaging app. An opt-out reply
+     * is the bare keyword and nothing else, so requiring a single token keeps a real message
+     * that merely mentions one ("did the STOP work?") from counting.
+     */
+    fun isOptOutReply(body: String): Boolean {
+        val token = body.trim()
+        if (token.isEmpty() || token.any { it.isWhitespace() }) return false
+        if (!token.all { it.isLetterOrDigit() }) return false
+        if (token.length !in 2..15) return false
+        val upper = token.uppercase()
+        // Either a keyword we know, or shouted - the convention these are written in.
+        return upper in KNOWN_KEYWORDS || TRAILING_COMPOUND.matches(token) || token == upper
+    }
+
     /** Same as [detect] but substitutes [fallback] instead of returning null. */
     fun detectOrFallback(body: String, fallback: String): DetectedKeyword =
         detect(body) ?: DetectedKeyword(fallback.uppercase(), KeywordConfidence.ASSUMED)

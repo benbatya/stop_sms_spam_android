@@ -1,6 +1,6 @@
 package com.batya.stopsmsspam
 
-import com.batya.stopsmsspam.data.OptOutRecord
+import com.batya.stopsmsspam.data.OptOutStatus
 import com.batya.stopsmsspam.data.PhoneAddress
 import com.batya.stopsmsspam.data.SenderGrouping
 import com.batya.stopsmsspam.data.model.KeywordConfidence
@@ -112,7 +112,7 @@ class SenderGroupingTest {
             message(2, "43733", body = "Deals daily! Reply UNSUB to be removed"),
         )
         val log = mapOf(
-            PhoneAddress.normalize("22395") to OptOutRecord("STOP", 1_700_000_000_000),
+            PhoneAddress.normalize("22395") to OptOutStatus("STOP", sentAtMillis = 1_700_000_000_000, confirmedAtMillis = 1_700_000_001_000),
         )
 
         val senders = SenderGrouping.group(messages, "STOP", log).associateBy { it.displayAddress }
@@ -129,7 +129,7 @@ class SenderGroupingTest {
     fun `recognises an unsubscribed sender across address formats`() {
         // The opt-out went to "+1 555-123-4567"; the confirmation comes back as "5551234567".
         val log = mapOf(
-            PhoneAddress.normalize("+1 555-123-4567") to OptOutRecord("STOP", 1L),
+            PhoneAddress.normalize("+1 555-123-4567") to OptOutStatus("STOP", sentAtMillis = 1L, confirmedAtMillis = 2L),
         )
         val sender = SenderGrouping.group(
             listOf(message(1, "5551234567", body = "You are unsubscribed")),
@@ -138,6 +138,76 @@ class SenderGroupingTest {
         ).single()
 
         assertTrue(sender.isUnsubscribed)
+    }
+
+    @Test
+    fun `a sender that was sent an opt-out but never answered is awaiting confirmation`() {
+        // Not the same as unsubscribed: we asked, they have not agreed. Still not repliable -
+        // the ask already went out - but the UI must not claim the sender is done.
+        val status = mapOf(
+            PhoneAddress.normalize("22395") to OptOutStatus("STOP", sentAtMillis = 100L),
+        )
+        val sender = SenderGrouping.group(
+            listOf(message(1, "22395", body = "Another sale! Reply STOP to opt out")),
+            "STOP",
+            status,
+        ).single()
+
+        assertFalse(sender.isUnsubscribed)
+        assertTrue(sender.awaitingConfirmation)
+        assertFalse(sender.canReply)
+    }
+
+    @Test
+    fun `flags a sender that confirmed the opt-out and then texted again`() {
+        val status = mapOf(
+            PhoneAddress.normalize("22395") to
+                OptOutStatus("STOP", sentAtMillis = 100L, confirmedAtMillis = 200L),
+        )
+        val messages = listOf(
+            message(2, "22395", body = "FLASH SALE! 50% off today", date = 300L),
+            message(1, "22395", body = "You have been unsubscribed", date = 200L),
+        )
+
+        val sender = SenderGrouping.group(messages, "STOP", status).single()
+
+        assertTrue(sender.ignoredOptOut)
+        assertEquals(300L, sender.optOutViolatedAt)
+    }
+
+    @Test
+    fun `the confirmation itself is not a violation`() {
+        val status = mapOf(
+            PhoneAddress.normalize("22395") to
+                OptOutStatus("STOP", sentAtMillis = 100L, confirmedAtMillis = 200L),
+        )
+        // A sender that sends only the acknowledgement, and a chatty one that repeats it, are
+        // both keeping their word - neither should be accused of ignoring the opt-out.
+        val messages = listOf(
+            message(2, "22395", body = "You have been unsubscribed. Goodbye.", date = 400L),
+            message(1, "22395", body = "You have been unsubscribed", date = 200L),
+        )
+
+        val sender = SenderGrouping.group(messages, "STOP", status).single()
+
+        assertFalse(sender.ignoredOptOut)
+    }
+
+    @Test
+    fun `an unconfirmed opt-out cannot be violated`() {
+        // No acknowledgement means no promise was made. A sender that never answered and keeps
+        // texting is unhelpful, but calling that a broken promise would be wrong.
+        val status = mapOf(
+            PhoneAddress.normalize("22395") to OptOutStatus("STOP", sentAtMillis = 100L),
+        )
+        val sender = SenderGrouping.group(
+            listOf(message(1, "22395", body = "FLASH SALE!", date = 900L)),
+            "STOP",
+            status,
+        ).single()
+
+        assertFalse(sender.ignoredOptOut)
+        assertTrue(sender.awaitingConfirmation)
     }
 
     @Test
