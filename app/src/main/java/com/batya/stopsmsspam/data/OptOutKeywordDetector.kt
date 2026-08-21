@@ -2,6 +2,7 @@ package com.batya.stopsmsspam.data
 
 import com.batya.stopsmsspam.data.model.DetectedKeyword
 import com.batya.stopsmsspam.data.model.KeywordConfidence
+import com.batya.stopsmsspam.data.model.SpamSender
 
 /**
  * Pulls the opt-out keyword a sender asks for out of its own message body.
@@ -60,6 +61,19 @@ object OptOutKeywordDetector {
         "STOPALL", "STOP", "UNSUBSCRIBE", "UNSUB", "OPTOUT", "ARRET", "ALTO",
     )
 
+    /**
+     * A compound like "STOP2STOP" or "End2End" tacked onto the end of a message - texting
+     * shorthand where "2" stands for "to". Senders append these as a sign-off rather than
+     * spelling out an instruction.
+     *
+     * Anchored to the *end* of the body on purpose. Mid-sentence, "End2End" is ordinary English
+     * ("our End2End encrypted chat is live"), and a false positive there does more than mislabel
+     * a row: it flips [SpamSender.hasOptOutLanguage] to true, which is what "Select all with
+     * opt-out" relies on to keep the user from replying to outright scam numbers. A trailing
+     * token is a sign-off; the same token inside a sentence is prose.
+     */
+    private val TRAILING_COMPOUND = Regex("""\b([A-Za-z]{2,15})2([A-Za-z]{2,15})[\s.!?]*$""")
+
     /** A bare shouted keyword, which is how many senders abbreviate the instruction. */
     private val BARE_PATTERN =
         Regex("\\b(" + UNAMBIGUOUS_KEYWORDS.joinToString("|") + ")\\b")
@@ -79,6 +93,12 @@ object OptOutKeywordDetector {
                 return DetectedKeyword(candidate, KeywordConfidence.EXPLICIT)
             }
         }
+
+        TRAILING_COMPOUND.find(body.trim())
+            ?.groupValues?.get(1)
+            ?.uppercase()
+            ?.takeIf { it in KNOWN_KEYWORDS }
+            ?.let { return DetectedKeyword(it, KeywordConfidence.LIKELY) }
 
         LIKELY_PATTERN.findAll(body)
             .mapNotNull { acceptKeyword(it.groupValues[1]) }

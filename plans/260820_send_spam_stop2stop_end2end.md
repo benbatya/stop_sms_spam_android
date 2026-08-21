@@ -7,37 +7,47 @@ Two new presets for `.claude/skills/send-spam`:
 1. `stop2stop` — short code, body `"STOP2STOP"`, expected keyword **STOP**
 2. `end2end` — long number, body `"End2End"`, expected keyword **END**
 
-## The open question these raise
+## What the run showed, and what changed
 
-Both bodies bury the keyword inside a larger token, which is exactly what the current detector
-is built *not* to do. Reading `OptOutKeywordDetector` before running anything:
+The prediction held. Probed directly before touching the device:
 
-- The bare-keyword pattern is `\b(STOPALL|STOP|…)\b`. In `STOP2STOP` there is no word boundary
-  between `STOP` and `2` (both are word characters), so `\bSTOP\b` should not match at either
-  position.
-- `END` is deliberately excluded from the bare-keyword set — a shouted bare "END" is as likely
-  to be marketing copy ("SALE ENDS TONIGHT") as an instruction. `End2End` is also mixed case,
-  and the bare pattern is case-sensitive.
+```
+STOP2STOP                   -> null
+End2End                     -> null
+Reply STOP2STOP to opt out  -> STOP2STOP (EXPLICIT)
+```
 
-So the expectation stated in the request is likely **not** what the app currently does: both
-should fall through to the ASSUMED fallback and be flagged "No opt-out offered". That makes this
-not purely a test-fixture change — the stated expectations are a detector feature request.
+So both new presets would have fallen through to the ASSUMED fallback and been flagged
+"No opt-out offered" — the opposite of the stated expectation. Adding them as fixtures alone
+would have documented a wrong expectation in the table, so the detector was extended.
 
-**To be settled by running it, not by reading the regexes.** Add the presets, observe what the
-app actually shows, and then decide between:
+**The rule added:** a compound of the form `KEYWORD2WORD` — texting shorthand where "2" stands
+for "to" — at the *end* of the message yields the leading keyword at LIKELY confidence.
 
-- extending the detector to find keywords inside compound tokens, or
-- recording the real behaviour in the preset table as the expectation.
+**Anchored to the end of the body, deliberately.** The first cut of this anchored to the whole
+body; the user corrected that — these compounds arrive as a suffix on a normal spam message, not
+as the entire message. Trailing-token anchoring covers both, since a body that *is* the token is
+also trailing.
 
-The risk with extending it is false positives: `End2End` is ordinary English ("our end2end
-encrypted chat"), and a wrong detection here does not merely mislabel a row — it flips
-`hasOptOutLanguage` to true, which is what "Select all with opt-out" trusts to keep the user
-from texting scam numbers. Any widening has to be narrow enough not to weaken that.
+The anchor still matters, and is not just a formality. Mid-sentence, `End2End` is ordinary
+English ("our End2End encrypted chat is live"). A false positive there does more than mislabel a
+row: it flips `hasOptOutLanguage` to true, and that flag is what "Select all with opt-out" relies
+on to keep the user from replying to scam numbers. A trailing token is a sign-off; the same token
+inside a sentence is prose. Covered by tests both ways.
 
-## Approach
+Residual risk, accepted knowingly: a message that happens to *end* on the phrase — "our chat is
+End2End" — would be a false positive. Tightening further (requiring preceding sentence
+punctuation) would have rejected the realistic `FLASH SALE 50% off everything, today only!
+STOP2STOP` shape, so the looser anchor is the right trade.
 
-Add the presets first, verify on the emulator, then bring the finding back before changing
-detection logic.
+The third probe line drove one more decision: an explicit instruction still wins, so
+`Reply STOP2STOP to opt out` still yields the whole token `STOP2STOP`, not `STOP`. If a sender
+names `STOP2STOP` as its keyword, that is what should be sent back — replying `STOP` might not
+register. The compound rule only applies when there is no instruction to read.
+
+Verified on the Android 16 emulator with the realistic suffix bodies:
+`33733 "FLASH SALE 50% off everything, today only! STOP2STOP"` shows `Reply "STOP" (probable)`,
+and `15557654321 "Hi! Are you still looking for work? End2End"` shows `Reply "END" (probable)`.
 
 ## Out of scope
 

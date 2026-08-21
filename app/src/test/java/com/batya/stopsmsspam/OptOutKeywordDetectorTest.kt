@@ -48,6 +48,49 @@ class OptOutKeywordDetectorTest {
     }
 
     @Test
+    fun `reads the keyword out of a compound appended to the end of a message`() {
+        // How senders actually use these: a sign-off rather than a spelled-out instruction.
+        assertEquals("STOP", keywordOf("FLASH SALE 50% off everything, today only! STOP2STOP"))
+        assertEquals("END", keywordOf("Hi! Are you still looking for work? End2End"))
+        assertEquals("STOP", keywordOf("Deals daily. stop2quit"))
+        assertEquals(
+            KeywordConfidence.LIKELY,
+            OptOutKeywordDetector.detect("Big sale! STOP2STOP")?.confidence,
+        )
+    }
+
+    @Test
+    fun `tolerates trailing punctuation and whitespace after the compound`() {
+        assertEquals("STOP", keywordOf("Last chance! STOP2STOP."))
+        assertEquals("END", keywordOf("Still hiring. End2End  "))
+    }
+
+    @Test
+    fun `still reads a compound that is the entire message`() {
+        assertEquals("STOP", keywordOf("STOP2STOP"))
+    }
+
+    @Test
+    fun `does not read a compound out of the middle of a sentence`() {
+        // "End2End" is ordinary English; treating it as an opt-out would wrongly mark the
+        // sender as offering one, which is what "Select all with opt-out" trusts.
+        assertNull(OptOutKeywordDetector.detect("Our End2End encrypted chat is now live"))
+        assertNull(OptOutKeywordDetector.detect("Save big on End2End delivery today"))
+    }
+
+    @Test
+    fun `ignores compounds whose leading word is not a keyword`() {
+        assertNull(OptOutKeywordDetector.detect("Face2Face"))
+        assertNull(OptOutKeywordDetector.detect("Peer2Peer"))
+    }
+
+    @Test
+    fun `an explicit instruction still wins over the compound rule`() {
+        // The sender named STOP2STOP as the keyword, so that whole token is what to send back.
+        assertEquals("STOP2STOP", keywordOf("Deals! Reply STOP2STOP to opt out"))
+    }
+
+    @Test
     fun `returns null when there is no opt-out language at all`() {
         assertNull(OptOutKeywordDetector.detect("Your package is delayed, click bit.ly/x to reschedule"))
         assertNull(OptOutKeywordDetector.detect("Hi, is this still your number?"))

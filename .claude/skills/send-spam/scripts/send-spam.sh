@@ -27,6 +27,8 @@ Presets:
   quit        short code, "Txt QUIT to stop receiving"   (keyword QUIT)
   unsub       short code, "Reply UNSUB to be removed"    (keyword UNSUB)
   bare        short code, shouted "STOP" only            (keyword STOP, likely)
+  stop2stop   short code, spam ending "... STOP2STOP"   (keyword STOP, from the suffix)
+  end2end     long number, spam ending "... End2End"     (keyword END, from the suffix)
   scam        long number, no opt-out language           (flagged "no opt-out offered")
   repeat      3 messages from ONE short code             (tests sender grouping)
   mixed       one of each of the above                   (the general-purpose case)
@@ -54,6 +56,8 @@ send_preset() {
         quit)   send_one 262966      "AMZN: your code is 449281. Txt QUIT to stop receiving alerts" ;;
         unsub)  send_one 43733       "Daily deals from BargainCo. Reply UNSUB to be removed" ;;
         bare)   send_one 55411       "ACCT ALERT: balance low. Msg&data rates may apply. STOP" ;;
+        stop2stop) send_one 33733    "FLASH SALE 50% off everything, today only! STOP2STOP" ;;
+        end2end)   send_one 15557654321 "Hi! Are you still looking for work? End2End" ;;
         scam)   send_one 15551234567 "Your package is delayed. Reschedule: bit.ly/x9f2" ;;
         repeat)
             send_one 22395 "FLASH SALE 50% off everything! Reply STOP to opt out"
@@ -63,7 +67,7 @@ send_preset() {
             send_one 22395 "LAST CHANCE, ends tonight! Reply STOP to opt out"
             ;;
         mixed)
-            for p in stop end quit unsub bare scam; do send_preset "$p"; sleep 1; done
+            for p in stop end quit unsub bare stop2stop end2end scam; do send_preset "$p"; sleep 1; done
             ;;
         *) echo "unknown preset: $1" >&2; usage; exit 2 ;;
     esac
@@ -116,7 +120,7 @@ role_holder() {
 # Validate the preset before announcing anything, so a typo fails cleanly.
 if [ -n "$PRESET" ]; then
     case "$PRESET" in
-        stop|end|quit|unsub|bare|scam|repeat|mixed) ;;
+        stop|end|quit|unsub|bare|stop2stop|end2end|scam|repeat|mixed) ;;
         *) echo "unknown preset: $PRESET" >&2; usage; exit 2 ;;
     esac
 fi
