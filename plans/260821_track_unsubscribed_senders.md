@@ -104,6 +104,17 @@ End-to-end on the Android 12 emulator, with the Sent box carrying opt-outs from 
   **never reached the provider**, while a control message from `55411` sent at the same moment
   arrived normally.
 
+## A bug the four-state test scene caught
+
+Setting up one sender in each state exposed that the list keyed its display on `isUnsubscribed`
+(confirmed only) while the batch keys its behaviour on `canReply` (anything already sent an
+opt-out). A sender in the middle state - opt-out sent, never acknowledged - therefore showed a
+"Reply STOP" chip and a checkbox, while selecting it would have *cleared* the thread instead.
+The row promised one thing and the plan did another.
+
+Both now key on `canReply`. Worth noting the shape of the mistake: two predicates that agreed in
+every case that had been looked at, and disagreed only in the state nothing had exercised yet.
+
 ## Known limitation
 
 Opt-out state is derived from the whole message history with no lookback window, so a sender

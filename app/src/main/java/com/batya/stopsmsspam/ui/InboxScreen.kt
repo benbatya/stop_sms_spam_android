@@ -176,10 +176,13 @@ private fun SenderRow(
                     overflow = TextOverflow.Ellipsis,
                 )
 
-                if (sender.isUnsubscribed) {
-                    UnsubscribedRow(sender, onMarkRead, onDelete, onBlock)
-                } else {
+                // Keyed on canReply, not on isUnsubscribed: a sender that was sent an opt-out
+                // and never answered is still one the batch will clear rather than text, and
+                // showing it a "Reply STOP" chip would promise something that will not happen.
+                if (sender.canReply) {
                     KeywordChip(keyword, sender.keyword.confidence)
+                } else {
+                    UnsubscribedRow(sender, onMarkRead, onDelete, onBlock)
                 }
             }
         }
