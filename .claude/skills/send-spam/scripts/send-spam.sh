@@ -6,6 +6,9 @@
 # the app's obligation, as default SMS app, to persist the message itself.
 set -euo pipefail
 
+# Only one emulator runs at a time (see the emulator skill), so the port is fixed and
+# there is nothing to resolve - whatever is up on 5554 is the emulator under test,
+# whichever Android version it happens to be.
 PORT="${PORT:-5554}"
 SERIAL="emulator-${PORT}"
 export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
@@ -34,6 +37,7 @@ Presets:
   mixed       one of each of the above                   (the general-purpose case)
 
 Options:
+  --port N          Emulator console port (default 5554, the only one used)
   --from NUMBER     originating address (short code or phone number)
   --body "TEXT"     message body
   --count N         send the same message N times (default 1)
@@ -77,6 +81,7 @@ LIST_ONLY=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --preset) PRESET="$2"; shift 2 ;;
+        --port) PORT="$2"; SERIAL="emulator-$2"; shift 2 ;;
         --from) FROM="$2"; shift 2 ;;
         --body) BODY="$2"; shift 2 ;;
         --count) COUNT="$2"; shift 2 ;;
@@ -89,7 +94,7 @@ done
 
 if ! "$ADB" devices | grep -q "^${SERIAL}[[:space:]]*device$"; then
     echo "No running emulator at $SERIAL." >&2
-    echo "Start one with: .claude/skills/emulator/scripts/emulator.sh" >&2
+    echo "Start one with: .claude/skills/emulator/scripts/emulator.sh --version 12|14|16" >&2
     exit 1
 fi
 

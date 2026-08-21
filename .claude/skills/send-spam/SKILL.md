@@ -14,6 +14,10 @@ description: Inject fake spam SMS into the running emulator so the Stop SMS Spam
 
 Needs a running emulator — start one with the **emulator** skill.
 
+Only one emulator runs at a time, always on port 5554, so there is no version or port to pick —
+whatever the emulator skill booted is what these messages go to. `--port N` exists as an override
+if you ever run one by hand.
+
 ## Presets, and what each one proves
 
 | Preset | Sender | Expected in the app |
