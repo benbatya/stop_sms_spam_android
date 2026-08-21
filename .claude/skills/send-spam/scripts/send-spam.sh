@@ -105,12 +105,30 @@ if [ -z "$PRESET" ] && { [ -z "$FROM" ] || [ -z "$BODY" ]; }; then
     PRESET="mixed"
 fi
 
+PKG="com.batya.stopsmsspam"
+
+role_holder() {
+    "$ADB" -s "$SERIAL" shell dumpsys role 2>/dev/null \
+        | grep -A3 'name=android.app.role.SMS' | grep -o 'holders=.*' | head -1 \
+        | cut -d= -f2 | tr -d '\r'
+}
+
 # Validate the preset before announcing anything, so a typo fails cleanly.
 if [ -n "$PRESET" ]; then
     case "$PRESET" in
         stop|end|quit|unsub|bare|scam|repeat|mixed) ;;
         *) echo "unknown preset: $PRESET" >&2; usage; exit 2 ;;
     esac
+fi
+
+HOLDER="$(role_holder)"
+if [ "$HOLDER" != "$PKG" ]; then
+    echo "WARNING: the SMS role is held by '${HOLDER:-unknown}', not $PKG." >&2
+    echo "         Incoming messages will be stored by that app, so this run does NOT" >&2
+    echo "         exercise SmsDeliverReceiver. Re-grant with:" >&2
+    echo "           .claude/skills/emulator/scripts/emulator.sh" >&2
+    echo "         (the role does not survive an emulator reboot)" >&2
+    echo >&2
 fi
 
 echo "Sending to $SERIAL:"
@@ -124,4 +142,10 @@ UNREAD=$("$ADB" -s "$SERIAL" shell content query --uri content://sms/inbox \
     --projection _id --where "read=0" 2>/dev/null | grep -c '^Row:' || true)
 echo
 echo "Inbox now has ${UNREAD} unread message(s)."
-echo "If that count looks right, the app's SmsDeliverReceiver persisted them correctly."
+if [ "$HOLDER" = "$PKG" ]; then
+    echo "$PKG holds the SMS role, so those rows exist only because its"
+    echo "SmsDeliverReceiver wrote them - nothing else could have."
+else
+    echo "NOTE: '${HOLDER:-unknown}' holds the SMS role, so IT stored those rows."
+    echo "This says nothing about whether $PKG's receiver works."
+fi
