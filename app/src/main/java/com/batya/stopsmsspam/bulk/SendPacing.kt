@@ -11,14 +11,19 @@ import kotlin.random.Random
  * Two separate things push back on sending fast. The Android framework itself blocks an app
  * that exceeds `SMS_OUTGOING_CHECK_MAX_COUNT` messages inside `SMS_OUTGOING_CHECK_INTERVAL_MS`
  * (30 messages / 30 minutes on stock) and starts prompting per message; carriers separately
- * dislike bursts of identical short messages. Both are addressed by putting a real gap between
- * sends, which is what the delay control is for.
+ * dislike bursts of identical short messages.
+ *
+ * The delay control addresses the carrier side directly. It deliberately no longer stretches far
+ * enough to clear the framework check: the range tops out at [SendPacing.MAX_DELAY_SECONDS], well
+ * under the ~62s a batch of more than [SendPacing.FRAMEWORK_BURST_LIMIT] would need. For batches
+ * that large the app warns rather than pretending a supported delay will fix it - see
+ * [SendPacing.safeDelaySecondsFor].
  */
 object SendPacing {
 
-    const val MIN_DELAY_SECONDS = 5
-    const val MAX_DELAY_SECONDS = 300
-    const val DEFAULT_DELAY_SECONDS = 60
+    const val MIN_DELAY_SECONDS = 1
+    const val MAX_DELAY_SECONDS = 10
+    const val DEFAULT_DELAY_SECONDS = 5
     const val DEFAULT_JITTER_PERCENT = 20
     const val MAX_JITTER_PERCENT = 50
 
@@ -56,11 +61,20 @@ object SendPacing {
     fun exceedsFrameworkThrottle(count: Int, delaySeconds: Int): Boolean =
         messagesInThrottleWindow(count, delaySeconds) > FRAMEWORK_BURST_LIMIT
 
-    /** Smallest delay that keeps a batch of [count] messages under the framework limit. */
-    fun safeDelaySecondsFor(count: Int): Int {
+    /**
+     * Smallest delay that keeps a batch of [count] messages under the framework limit, or null
+     * when no delay in the permitted range can.
+     *
+     * Nullable on purpose. Clearing the throttle for a batch over [FRAMEWORK_BURST_LIMIT] needs
+     * roughly a minute between sends, which is outside the range this app offers - so coercing
+     * the answer back into range would hand out a delay that does not actually work, and the UI
+     * would present it as a fix. Null says plainly that the batch cannot be paced out of
+     * trouble, so the caller keeps warning instead of promising a remedy.
+     */
+    fun safeDelaySecondsFor(count: Int): Int? {
         if (count <= FRAMEWORK_BURST_LIMIT) return MIN_DELAY_SECONDS
         val needed = FRAMEWORK_WINDOW_SECONDS / (FRAMEWORK_BURST_LIMIT - 1) + 1
-        return needed.coerceIn(MIN_DELAY_SECONDS, MAX_DELAY_SECONDS)
+        return needed.takeIf { it in MIN_DELAY_SECONDS..MAX_DELAY_SECONDS }
     }
 
     /** Rough wall-clock length of the run, ignoring per-send network time. */

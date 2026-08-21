@@ -86,20 +86,32 @@ fun ReviewScreen(
                     )
 
                     if (throttled) {
+                        // A safe delay only exists for batches small enough that one fits inside
+                        // the supported range; past that the honest thing is to warn and say why,
+                        // not to offer a button that changes a number without fixing anything.
+                        val safeDelay = SendPacing.safeDelaySecondsFor(senders.size)
                         WarningCard(
-                            "Android blocks an app after ${SendPacing.FRAMEWORK_BURST_LIMIT} " +
-                                "messages in 30 minutes and then asks you to confirm each one. " +
-                                "At this pace that limit will be hit.",
-                            action = {
-                                TextButton(
-                                    onClick = {
-                                        onSettingsChange(
-                                            settings.copy(
-                                                delaySeconds = SendPacing.safeDelaySecondsFor(senders.size),
-                                            ),
-                                        )
-                                    },
-                                ) { Text("Use a safe delay") }
+                            buildString {
+                                append("Android blocks an app after ")
+                                append("${SendPacing.FRAMEWORK_BURST_LIMIT} messages in 30 ")
+                                append("minutes and then asks you to confirm each one. ")
+                                append("At this pace that limit will be hit. ")
+                                if (safeDelay == null) {
+                                    append(
+                                        "No delay this app offers is long enough to avoid it for " +
+                                            "a batch this size - send fewer at a time, or expect " +
+                                            "to tap through a confirmation for the later ones.",
+                                    )
+                                }
+                            },
+                            action = safeDelay?.let { seconds ->
+                                {
+                                    TextButton(
+                                        onClick = {
+                                            onSettingsChange(settings.copy(delaySeconds = seconds))
+                                        },
+                                    ) { Text("Use a safe delay (${seconds}s)") }
+                                }
                             },
                         )
                     }
