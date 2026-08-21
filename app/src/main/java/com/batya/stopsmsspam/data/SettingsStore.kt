@@ -46,8 +46,9 @@ class SettingsStore(private val context: Context) {
     suspend fun update(transform: (AppSettings) -> AppSettings) {
         val updated = transform(current())
         context.dataStore.edit { prefs ->
-            prefs[KEY_DELAY] = updated.delaySeconds
-                .coerceIn(SendPacing.MIN_DELAY_SECONDS, SendPacing.MAX_DELAY_SECONDS)
+            // Snapped, not just clamped: the slider offers a fixed set of delays, and a value
+            // stored when the range was different should land on one of them.
+            prefs[KEY_DELAY] = SendPacing.nearestStep(updated.delaySeconds)
             prefs[KEY_JITTER] = updated.jitterPercent.coerceIn(0, SendPacing.MAX_JITTER_PERCENT)
             prefs[KEY_FALLBACK] = updated.fallbackKeyword.trim().uppercase().ifEmpty { "STOP" }
             prefs[KEY_MARK_READ] = updated.markReadAfterSend
