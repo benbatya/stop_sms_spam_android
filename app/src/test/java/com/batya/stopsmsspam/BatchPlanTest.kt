@@ -12,6 +12,15 @@ class BatchPlanTest {
         ReplyPlan(address, "STOP", listOf(1L), 1, sendReply)
 
     @Test
+    fun `a plan deletes by default and does not block`() {
+        // Deleting is the point of the app; blocking is system-wide and outlives it, so it is
+        // never the silent default.
+        val plan = ReplyPlan("22395", "STOP", listOf(1L), 1)
+        assertTrue(plan.delete)
+        assertTrue(!plan.block)
+    }
+
+    @Test
     fun `a plan sends a reply by default`() {
         assertTrue(ReplyPlan("22395", "STOP", listOf(1L), 1).sendReply)
     }

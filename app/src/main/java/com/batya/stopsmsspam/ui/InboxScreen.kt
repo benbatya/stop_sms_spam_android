@@ -43,6 +43,8 @@ fun InboxScreen(
     onDelete: (SpamSender) -> Unit,
     onMarkAllUnsubscribedRead: () -> Unit,
     onBlock: (SpamSender) -> Unit,
+    onSetDelete: (SpamSender, Boolean) -> Unit,
+    onSetBlock: (SpamSender, Boolean) -> Unit,
 ) {
     if (state.loading && state.senders.isEmpty()) {
         Column(
@@ -116,6 +118,10 @@ fun InboxScreen(
                 onMarkRead = { onMarkRead(sender) },
                 onDelete = { onDelete(sender) },
                 onBlock = { onBlock(sender) },
+                deletes = state.deletesMessages(sender),
+                blocks = state.blocksNumber(sender),
+                onSetDelete = { onSetDelete(sender, it) },
+                onSetBlock = { onSetBlock(sender, it) },
             )
         }
     }
@@ -130,6 +136,10 @@ private fun SenderRow(
     onMarkRead: () -> Unit,
     onDelete: () -> Unit,
     onBlock: () -> Unit,
+    deletes: Boolean,
+    blocks: Boolean,
+    onSetDelete: (Boolean) -> Unit,
+    onSetBlock: (Boolean) -> Unit,
 ) {
     Card(
         modifier = Modifier
@@ -184,8 +194,53 @@ private fun SenderRow(
                 } else {
                     UnsubscribedRow(sender, onMarkRead, onDelete, onBlock)
                 }
+
+                // The disposition only matters once the sender is actually selected, and showing
+                // it on every row would bury the message under controls.
+                if (selected) {
+                    DispositionControls(
+                        sender = sender,
+                        deletes = deletes,
+                        blocks = blocks,
+                        onSetDelete = onSetDelete,
+                        onSetBlock = onSetBlock,
+                    )
+                }
             }
         }
+    }
+}
+
+/**
+ * Per-sender choice of what happens to the thread afterwards.
+ *
+ * Deleting is the default, because being rid of these is the point of the app; the toggle is
+ * there for the thread worth keeping. Blocking defaults on only for a sender that acknowledged
+ * an opt-out and messaged anyway, and is spelled out rather than silent - it is system-wide and
+ * outlives this app, so it should never happen without the user seeing it.
+ */
+@Composable
+private fun DispositionControls(
+    sender: SpamSender,
+    deletes: Boolean,
+    blocks: Boolean,
+    onSetDelete: (Boolean) -> Unit,
+    onSetBlock: (Boolean) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(checked = deletes, onCheckedChange = onSetDelete)
+        Text(
+            if (deletes) "Delete these messages" else "Keep them, just mark read",
+            style = MaterialTheme.typography.labelMedium,
+        )
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(checked = blocks, onCheckedChange = onSetBlock)
+        Text(
+            "Block this number",
+            style = MaterialTheme.typography.labelMedium,
+            color = if (blocks) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+        )
     }
 }
 

@@ -104,6 +104,28 @@ End-to-end on the Android 12 emulator, with the Sent box carrying opt-outs from 
   **never reached the provider**, while a control message from `55411` sent at the same moment
   arrived normally.
 
+## Disposition is per sender, chosen at selection
+
+The Review screen used to carry two global switches — "mark the spam as read" and "delete the
+spam instead". They are gone. One pair of switches cannot express "delete these, keep that one,
+and block the one that ignored its own opt-out", which is the actual shape of a batch.
+
+Selecting a sender now reveals its own controls, with defaults that match what the state implies:
+
+| Sender | Delete | Block |
+|---|---|---|
+| ordinary spam | **on** — being rid of these is the point | off |
+| STOP ignored | **on** | **on** — asking has already been tried and demonstrably failed |
+
+Either can be toggled per sender. `ReplyPlan` carries `delete` and `block`, fixed when the batch
+is confirmed, and `AppSettings`/`BatchSnapshot` lost their global equivalents.
+
+**Blocking is never silent.** It is system-wide and outlives this app, so: the checkbox is
+labelled in error colours, Review summarises "N numbers blocked — system-wide, and it outlives
+this app", and the confirmation dialog names it. A batch that only blocks and clears — sending
+nothing at all — still asks for confirmation, where previously confirmation was skipped whenever
+no message was going out.
+
 ## A bug the four-state test scene caught
 
 Setting up one sender in each state exposed that the list keyed its display on `isUnsubscribed`

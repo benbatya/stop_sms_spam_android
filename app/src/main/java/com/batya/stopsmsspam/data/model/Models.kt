@@ -93,6 +93,17 @@ data class ReplyPlan(
      * will do is fixed at the moment the user confirms it, not recomputed mid-run.
      */
     val sendReply: Boolean = true,
+    /**
+     * Delete the sender's messages once handled, rather than only marking them read. The default
+     * for everything - the point of the app is to be rid of these - with a per-sender toggle to
+     * keep a thread that is worth keeping.
+     */
+    val delete: Boolean = true,
+    /**
+     * Block the number outright. Defaults on only for a sender that acknowledged an opt-out and
+     * then messaged anyway: it has already demonstrated that asking does not work.
+     */
+    val block: Boolean = false,
 )
 
 enum class SendStatus {
@@ -125,6 +136,7 @@ data class SendOutcome(
     val status: SendStatus,
     val detail: String? = null,
     val timestamp: Long = 0L,
+    val blocked: Boolean = false,
 )
 
 data class BatchProgress(
@@ -141,5 +153,6 @@ data class BatchProgress(
     val failedCount: Int get() = outcomes.count { it.status == SendStatus.FAILED }
     val unconfirmedCount: Int get() = outcomes.count { it.status == SendStatus.UNCONFIRMED }
     val clearedCount: Int get() = outcomes.count { it.status == SendStatus.CLEARED }
+    val blockedCount: Int get() = outcomes.count { it.blocked }
     val finished: Boolean get() = !running && outcomes.isNotEmpty()
 }

@@ -90,8 +90,10 @@ fun AppRoot(viewModel: MainViewModel) {
                 finished = progress.finished,
                 onReview = { viewModel.goTo(Screen.Review) },
                 onSend = {
-                    val sendsNothing = state.settings.dryRun || state.selectedForReply.isEmpty()
-                    if (sendsNothing) viewModel.startBatch() else confirmSend = true
+                    val blocking = state.selectedSenders.any { state.blocksNumber(it) }
+                    val needsConfirming =
+                        !state.settings.dryRun && (state.selectedForReply.isNotEmpty() || blocking)
+                    if (needsConfirming) confirmSend = true else viewModel.startBatch()
                 },
                 onCancel = viewModel::cancelBatch,
                 onDone = viewModel::finishBatch,
@@ -118,6 +120,8 @@ fun AppRoot(viewModel: MainViewModel) {
                 onDelete = viewModel::deleteMessages,
                 onMarkAllUnsubscribedRead = viewModel::markAllUnsubscribedRead,
                 onBlock = viewModel::blockSender,
+                onSetDelete = viewModel::setDeleteMessages,
+                onSetBlock = viewModel::setBlockNumber,
             )
 
             Screen.Review -> ReviewScreen(
@@ -134,18 +138,32 @@ fun AppRoot(viewModel: MainViewModel) {
     if (confirmSend) {
         AlertDialog(
             onDismissRequest = { confirmSend = false },
-            title = { Text("Send " + countOf(state.selectedForReply.size, "real text message") + "?") },
+            title = {
+                Text(
+                    if (state.selectedForReply.isEmpty()) "Block and clear these threads?"
+                    else "Send " + countOf(state.selectedForReply.size, "real text message") + "?",
+                )
+            },
             text = {
                 Text(
                     buildString {
-                        append("Dry run is off. This will text ")
-                        append(countOf(state.selectedForReply.size, "number"))
-                        append(", ${state.settings.delaySeconds}s apart, from your SIM. ")
-                        append("Standard message rates apply.")
+                        if (state.selectedForReply.isNotEmpty()) {
+                            append("Dry run is off. This will text ")
+                            append(countOf(state.selectedForReply.size, "number"))
+                            append(", ${state.settings.delaySeconds}s apart, from your SIM. ")
+                            append("Standard message rates apply.")
+                        }
                         if (state.selectedForCleanup.isNotEmpty()) {
                             append(
                                 " The other ${state.selectedForCleanup.size} " +
                                     "will be cleared without being texted.",
+                            )
+                        }
+                        val blocking = state.selectedSenders.count { state.blocksNumber(it) }
+                        if (blocking > 0) {
+                            append(
+                                " " + countOf(blocking, "number") + " will be blocked " +
+                                    "system-wide, which outlives this app.",
                             )
                         }
                     },

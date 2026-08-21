@@ -35,6 +35,13 @@ data class UiState(
     val selected: Set<String> = emptySet(),
     /** User edits to the detected keyword, keyed by `SpamSender.normalizedAddress`. */
     val keywordOverrides: Map<String, String> = emptyMap(),
+    /**
+     * Senders the user chose to keep rather than delete, keyed by normalized address. Deleting
+     * is the default - being rid of the messages is the point - so this records the exceptions.
+     */
+    val keepMessages: Set<String> = emptySet(),
+    /** Per-sender overrides of the default blocking decision, keyed by normalized address. */
+    val blockOverrides: Map<String, Boolean> = emptyMap(),
     val settings: AppSettings = AppSettings(),
     /** Address whose block attempt failed, so the UI can say so rather than silently no-op. */
     val lastBlockFailed: String? = null,
@@ -47,6 +54,17 @@ data class UiState(
 
     /** Selected senders that will only have their threads cleared. */
     val selectedForCleanup: List<SpamSender> get() = selectedSenders.filter { !it.canReply }
+
+    /** Whether the sender's messages will be deleted; false means only marked read. */
+    fun deletesMessages(sender: SpamSender): Boolean =
+        sender.normalizedAddress !in keepMessages
+
+    /**
+     * Whether the number will be blocked. Defaults on for a sender that acknowledged an opt-out
+     * and messaged anyway - asking it politely has already been tried and demonstrably failed.
+     */
+    fun blocksNumber(sender: SpamSender): Boolean =
+        blockOverrides[sender.normalizedAddress] ?: sender.ignoredOptOut
 
     fun keywordFor(sender: SpamSender): String =
         keywordOverrides[sender.normalizedAddress] ?: sender.keyword.keyword
@@ -116,6 +134,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     senders = senders,
                     selected = current.selected intersect liveKeys,
                     keywordOverrides = current.keywordOverrides.filterKeys { it in liveKeys },
+                    keepMessages = current.keepMessages intersect liveKeys,
+                    blockOverrides = current.blockOverrides.filterKeys { it in liveKeys },
                 )
             }
         }
@@ -194,6 +214,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _state.update { it.copy(selected = emptySet()) }
     }
 
+    /** Flips a sender between "delete the messages" and "just mark them read". */
+    fun setDeleteMessages(sender: SpamSender, delete: Boolean) {
+        _state.update { current ->
+            val key = sender.normalizedAddress
+            current.copy(
+                keepMessages = if (delete) current.keepMessages - key else current.keepMessages + key,
+            )
+        }
+    }
+
+    fun setBlockNumber(sender: SpamSender, block: Boolean) {
+        _state.update { current ->
+            current.copy(blockOverrides = current.blockOverrides + (sender.normalizedAddress to block))
+        }
+    }
+
     fun setKeyword(sender: SpamSender, keyword: String) {
         _state.update { current ->
             current.copy(
@@ -226,6 +262,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 // Already opted out of: the thread still gets cleaned up, but sending a second
                 // opt-out would be noise - and to a sender that ignored the first, useless.
                 sendReply = sender.canReply,
+                delete = current.deletesMessages(sender),
+                block = current.blocksNumber(sender),
             )
         }
         if (plans.isEmpty()) return
@@ -237,8 +275,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 delaySeconds = current.settings.delaySeconds,
                 jitterPercent = current.settings.jitterPercent,
                 dryRun = current.settings.dryRun,
-                markReadAfterSend = current.settings.markReadAfterSend,
-                deleteAfterSend = current.settings.deleteAfterSend,
             ),
         )
         goTo(Screen.Progress)

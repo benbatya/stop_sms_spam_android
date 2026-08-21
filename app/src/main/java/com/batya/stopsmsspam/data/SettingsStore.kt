@@ -17,8 +17,6 @@ data class AppSettings(
     val delaySeconds: Int = SendPacing.DEFAULT_DELAY_SECONDS,
     val jitterPercent: Int = SendPacing.DEFAULT_JITTER_PERCENT,
     val fallbackKeyword: String = "STOP",
-    val markReadAfterSend: Boolean = true,
-    val deleteAfterSend: Boolean = false,
     /**
      * On by default. The first thing anyone should do with a tool that texts dozens of strangers
      * is watch it not text anyone.
@@ -35,8 +33,6 @@ class SettingsStore(private val context: Context) {
             delaySeconds = prefs[KEY_DELAY] ?: SendPacing.DEFAULT_DELAY_SECONDS,
             jitterPercent = prefs[KEY_JITTER] ?: SendPacing.DEFAULT_JITTER_PERCENT,
             fallbackKeyword = prefs[KEY_FALLBACK] ?: "STOP",
-            markReadAfterSend = prefs[KEY_MARK_READ] ?: true,
-            deleteAfterSend = prefs[KEY_DELETE] ?: false,
             dryRun = prefs[KEY_DRY_RUN] ?: true,
         )
     }
@@ -51,8 +47,6 @@ class SettingsStore(private val context: Context) {
             prefs[KEY_DELAY] = SendPacing.nearestStep(updated.delaySeconds)
             prefs[KEY_JITTER] = updated.jitterPercent.coerceIn(0, SendPacing.MAX_JITTER_PERCENT)
             prefs[KEY_FALLBACK] = updated.fallbackKeyword.trim().uppercase().ifEmpty { "STOP" }
-            prefs[KEY_MARK_READ] = updated.markReadAfterSend
-            prefs[KEY_DELETE] = updated.deleteAfterSend
             prefs[KEY_DRY_RUN] = updated.dryRun
         }
     }
@@ -61,8 +55,6 @@ class SettingsStore(private val context: Context) {
         val KEY_DELAY = intPreferencesKey("delay_seconds")
         val KEY_JITTER = intPreferencesKey("jitter_percent")
         val KEY_FALLBACK = stringPreferencesKey("fallback_keyword")
-        val KEY_MARK_READ = booleanPreferencesKey("mark_read_after_send")
-        val KEY_DELETE = booleanPreferencesKey("delete_after_send")
         val KEY_DRY_RUN = booleanPreferencesKey("dry_run")
     }
 }

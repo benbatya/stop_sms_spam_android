@@ -133,17 +133,13 @@ fun ReviewScreen(
                         checked = settings.dryRun,
                         onCheckedChange = { onSettingsChange(settings.copy(dryRun = it)) },
                     )
-                    SettingSwitch(
-                        title = "Mark the spam as read",
-                        subtitle = "Clears it from your unread list once the reply is confirmed",
-                        checked = settings.markReadAfterSend,
-                        onCheckedChange = { onSettingsChange(settings.copy(markReadAfterSend = it)) },
-                    )
-                    SettingSwitch(
-                        title = "Delete the spam instead",
-                        subtitle = "Permanently removes those messages. Overrides mark-as-read.",
-                        checked = settings.deleteAfterSend,
-                        onCheckedChange = { onSettingsChange(settings.copy(deleteAfterSend = it)) },
+                    // What becomes of each thread is chosen per sender in the list, not here:
+                    // one global switch cannot say "delete these, keep that one, block the one
+                    // that ignored its opt-out".
+                    Text(
+                        "What happens to each thread - delete, keep, or block - is set per " +
+                            "sender when you select it. The summary below shows the result.",
+                        style = MaterialTheme.typography.labelSmall,
                     )
                 }
             }
@@ -168,6 +164,29 @@ fun ReviewScreen(
                         "Consider removing them below.",
                     modifier = Modifier.padding(horizontal = 8.dp),
                 )
+            }
+        }
+
+        item {
+            val toDelete = state.selectedSenders.count { state.deletesMessages(it) }
+            val toKeep = state.selectedSenders.size - toDelete
+            val toBlock = state.selectedSenders.count { state.blocksNumber(it) }
+            Card(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Then", style = MaterialTheme.typography.titleSmall)
+                    if (toDelete > 0) Text("• " + countOf(toDelete, "thread") + " deleted",
+                        style = MaterialTheme.typography.bodySmall)
+                    if (toKeep > 0) Text("• " + countOf(toKeep, "thread") + " kept, marked read",
+                        style = MaterialTheme.typography.bodySmall)
+                    if (toBlock > 0) {
+                        Text(
+                            "• " + countOf(toBlock, "number") + " blocked - system-wide, and it " +
+                                "outlives this app",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
             }
         }
 
