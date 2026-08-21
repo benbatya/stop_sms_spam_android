@@ -1,7 +1,9 @@
 # Stop SMS Spam — initial implementation
 
-Initial commit of the whole app. There is no prior history on this branch, so this file
-records the decisions behind the first version rather than a delta.
+Initial commit of the whole app. There was no prior history, so this file records the
+decisions behind the first version rather than a delta.
+
+(Written as `plans/master.md` when the trunk was still called `master`; renamed with it.)
 
 ## What was asked for
 

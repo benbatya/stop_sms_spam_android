@@ -128,6 +128,18 @@ object Notifications {
         return builder.build()
     }
 
+    /**
+     * Builds the batch notification and posts it, so callers never touch NotificationManager
+     * directly. Beyond removing the duplication, it keeps every `notify` behind
+     * [notifySafely]'s explicit SecurityException catch - which is also the shape lint
+     * recognises as guarding POST_NOTIFICATIONS. Callers that wrapped their own `notify` in
+     * `runCatching` were equally safe at runtime but reported as unguarded, because lint does
+     * not see through it.
+     */
+    fun notifyBatchProgress(context: Context, progress: BatchProgress) {
+        notifySafely(context, BATCH_NOTIFICATION_ID, buildBatchNotification(context, progress))
+    }
+
     private fun openAppIntent(context: Context): PendingIntent =
         PendingIntent.getActivity(
             context,

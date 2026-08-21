@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.IBinder
 import android.util.Log
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import com.batya.stopsmsspam.data.SmsRepository
 import com.batya.stopsmsspam.data.model.BatchProgress
@@ -224,11 +223,7 @@ class BulkReplyService : Service() {
 
     private fun publish(outcomes: List<SendOutcome>) {
         BulkReplyController.update { it.copy(outcomes = outcomes.toList()) }
-        val progress = BulkReplyController.progress.value
-        runCatching {
-            NotificationManagerCompat.from(this)
-                .notify(Notifications.BATCH_NOTIFICATION_ID, Notifications.buildBatchNotification(this, progress))
-        }
+        Notifications.notifyBatchProgress(this, BulkReplyController.progress.value)
     }
 
     private fun goForeground(progress: BatchProgress) {
@@ -243,12 +238,7 @@ class BulkReplyService : Service() {
     private fun finish() {
         // Leave the final notification up so the user can read the summary after we detach.
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_DETACH)
-        runCatching {
-            NotificationManagerCompat.from(this).notify(
-                Notifications.BATCH_NOTIFICATION_ID,
-                Notifications.buildBatchNotification(this, BulkReplyController.progress.value),
-            )
-        }
+        Notifications.notifyBatchProgress(this, BulkReplyController.progress.value)
         stopSelf()
     }
 
