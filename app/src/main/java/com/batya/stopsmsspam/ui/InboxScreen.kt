@@ -37,7 +37,7 @@ fun InboxScreen(
     state: UiState,
     contentPadding: PaddingValues,
     onToggle: (SpamSender) -> Unit,
-    onSelectAllWithOptOut: () -> Unit,
+    onSelectAll: () -> Unit,
     onClearSelection: () -> Unit,
     onMarkRead: (SpamSender) -> Unit,
     onDelete: (SpamSender) -> Unit,
@@ -80,7 +80,7 @@ fun InboxScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onSelectAllWithOptOut) { Text("Select all with opt-out") }
+                TextButton(onClick = onSelectAll) { Text("Select all") }
                 TextButton(onClick = onClearSelection) { Text("Clear") }
             }
         }

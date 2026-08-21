@@ -126,6 +126,19 @@ this app", and the confirmation dialog names it. A batch that only blocks and cl
 nothing at all — still asks for confirmation, where previously confirmation was skipped whenever
 no message was going out.
 
+## "Select all with opt-out" became "Select all"
+
+The bulk action excluded senders already opted out of. That made sense when selecting a sender
+meant texting it — but it no longer does, since such a sender is cleared rather than re-texted.
+The exclusion therefore skipped exactly the threads a user reaching for a bulk action most wants
+swept up: the confirmations and the unanswered opt-outs.
+
+It now selects everything, including senders that never offered an opt-out. **The protection
+moves rather than disappearing**: those senders are still counted in Review's "never offered a
+way to opt out — replying confirms your number is live" warning, and are still individually
+deselectable. Excluding them from a button labelled "select all" would have been a quieter way
+of doing the same job, and a more surprising one.
+
 ## A bug the four-state test scene caught
 
 Setting up one sender in each state exposed that the list keyed its display on `isUnsubscribed`

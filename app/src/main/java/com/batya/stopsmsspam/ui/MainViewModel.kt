@@ -151,17 +151,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Selects senders that published an opt-out keyword and have not already been opted out of.
-     * Both exclusions matter: the first keeps the user from replying to scam numbers, the second
-     * from re-texting a sender whose only new message is their own unsubscribe confirmation.
+     * Selects every sender in the list.
+     *
+     * It used to exclude senders already opted out of, from when selecting one meant texting it.
+     * That is no longer true - such a sender is cleared, not re-texted - so excluding them just
+     * meant the bulk action skipped exactly the threads the user most wanted swept up.
+     *
+     * Senders that never offered an opt-out are included too, but they are not silently texted
+     * into: the Review screen still counts them and says that replying to a number which never
+     * offered a way out confirms it is live rather than stopping it.
      */
-    fun selectAllWithOptOut() {
+    fun selectAll() {
         _state.update { current ->
-            current.copy(
-                selected = current.senders.filter { it.hasOptOutLanguage && it.canReply }
-                    .map { it.normalizedAddress }
-                    .toSet(),
-            )
+            current.copy(selected = current.senders.map { it.normalizedAddress }.toSet())
         }
     }
 

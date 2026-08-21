@@ -114,7 +114,7 @@ fun AppRoot(viewModel: MainViewModel) {
                 state = state,
                 contentPadding = padding,
                 onToggle = viewModel::toggleSelection,
-                onSelectAllWithOptOut = viewModel::selectAllWithOptOut,
+                onSelectAll = viewModel::selectAll,
                 onClearSelection = viewModel::clearSelection,
                 onMarkRead = viewModel::markRead,
                 onDelete = viewModel::deleteMessages,
