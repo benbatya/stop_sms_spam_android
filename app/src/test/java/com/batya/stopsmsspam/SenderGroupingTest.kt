@@ -4,6 +4,7 @@ import com.batya.stopsmsspam.data.OptOutStatus
 import com.batya.stopsmsspam.data.PhoneAddress
 import com.batya.stopsmsspam.data.SenderGrouping
 import com.batya.stopsmsspam.data.model.KeywordConfidence
+import com.batya.stopsmsspam.data.model.MessageSource
 import com.batya.stopsmsspam.data.model.SpamMessage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -17,6 +18,7 @@ class SenderGroupingTest {
         address: String,
         body: String = "Reply STOP to opt out",
         date: Long = id,
+        source: MessageSource = MessageSource.SMS,
     ) = SpamMessage(
         id = id,
         address = address,
@@ -24,6 +26,7 @@ class SenderGroupingTest {
         date = date,
         threadId = 1L,
         subscriptionId = 1,
+        source = source,
     )
 
     @Test
@@ -34,7 +37,7 @@ class SenderGroupingTest {
 
         assertEquals(1, senders.size)
         assertEquals(8, senders.single().messageCount)
-        assertEquals(8, senders.single().messageIds.size)
+        assertEquals(8, senders.single().messages.size)
     }
 
     @Test
@@ -218,6 +221,67 @@ class SenderGroupingTest {
         )
         assertTrue(senders.all { it.canReply })
         assertTrue(senders.none { it.isUnsubscribed })
+    }
+
+    @Test
+    fun `groups SMS and MMS from the same sender into one row`() {
+        // The whole point of surfacing MMS: a sender that used both is one sender, and gets one
+        // reply - not one per table.
+        val messages = listOf(
+            message(1, "+18022160869", date = 300L, source = MessageSource.MMS),
+            message(2, "8022160869", date = 200L),
+        )
+
+        val sender = SenderGrouping.group(messages, "STOP").single()
+
+        assertEquals(2, sender.messageCount)
+        assertTrue(sender.hasMms)
+        assertEquals(
+            listOf(MessageSource.MMS, MessageSource.SMS),
+            sender.messages.map { it.source },
+        )
+    }
+
+    @Test
+    fun `an all-SMS sender is not flagged as having MMS`() {
+        assertFalse(SenderGrouping.group(listOf(message(1, "22395")), "STOP").single().hasMms)
+    }
+
+    // The badge says "MMS" or "SMS + MMS" off this flag alone, so getting it backwards would
+    // mislabel every mixed thread in the list.
+    @Test
+    fun `a mixed thread is not all-MMS`() {
+        val messages = listOf(
+            message(1, "8022160869", date = 300L, source = MessageSource.MMS),
+            message(2, "8022160869", date = 200L),
+        )
+
+        val sender = SenderGrouping.group(messages, "STOP").single()
+
+        assertTrue(sender.hasMms)
+        assertFalse(sender.isAllMms)
+        assertEquals(1, sender.mmsCount)
+    }
+
+    @Test
+    fun `a thread of nothing but MMS is all-MMS`() {
+        val messages = listOf(
+            message(1, "8022160869", date = 300L, source = MessageSource.MMS),
+            message(2, "8022160869", date = 200L, source = MessageSource.MMS),
+        )
+
+        val sender = SenderGrouping.group(messages, "STOP").single()
+
+        assertTrue(sender.isAllMms)
+        assertEquals(2, sender.mmsCount)
+    }
+
+    @Test
+    fun `an all-SMS sender is not all-MMS`() {
+        val sender = SenderGrouping.group(listOf(message(1, "22395")), "STOP").single()
+
+        assertFalse(sender.isAllMms)
+        assertEquals(0, sender.mmsCount)
     }
 
     @Test

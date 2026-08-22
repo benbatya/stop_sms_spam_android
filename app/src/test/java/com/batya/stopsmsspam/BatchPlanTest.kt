@@ -1,6 +1,8 @@
 package com.batya.stopsmsspam
 
 import com.batya.stopsmsspam.bulk.SendPacing
+import com.batya.stopsmsspam.data.model.MessageRef
+import com.batya.stopsmsspam.data.model.MessageSource
 import com.batya.stopsmsspam.data.model.ReplyPlan
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -9,20 +11,20 @@ import org.junit.Test
 class BatchPlanTest {
 
     private fun plan(address: String, sendReply: Boolean) =
-        ReplyPlan(address, "STOP", listOf(1L), 1, sendReply)
+        ReplyPlan(address, "STOP", listOf(MessageRef(1L, MessageSource.SMS)), 1, sendReply)
 
     @Test
     fun `a plan deletes by default and does not block`() {
         // Deleting is the point of the app; blocking is system-wide and outlives it, so it is
         // never the silent default.
-        val plan = ReplyPlan("22395", "STOP", listOf(1L), 1)
+        val plan = ReplyPlan("22395", "STOP", listOf(MessageRef(1L, MessageSource.SMS)), 1)
         assertTrue(plan.delete)
         assertTrue(!plan.block)
     }
 
     @Test
     fun `a plan sends a reply by default`() {
-        assertTrue(ReplyPlan("22395", "STOP", listOf(1L), 1).sendReply)
+        assertTrue(ReplyPlan("22395", "STOP", listOf(MessageRef(1L, MessageSource.SMS)), 1).sendReply)
     }
 
     @Test

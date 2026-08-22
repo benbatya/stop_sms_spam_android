@@ -7,6 +7,8 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Telephony
 import androidx.core.content.ContextCompat
+import com.batya.stopsmsspam.data.model.MessageRef
+import com.batya.stopsmsspam.data.model.MessageSource
 import com.batya.stopsmsspam.data.model.SpamMessage
 import com.batya.stopsmsspam.data.model.SpamSender
 import kotlinx.coroutines.Dispatchers
@@ -73,8 +75,116 @@ class SmsRepository(private val context: Context) {
                 }
             }
 
-            SenderGrouping.group(messages, fallbackKeyword, optedOut)
+            val all = (messages + runCatching { loadUnreadMms() }.getOrDefault(emptyList()))
+                .sortedByDescending { it.date }
+            SenderGrouping.group(all, fallbackKeyword, optedOut)
         }
+
+    /**
+     * Unread inbox MMS, shaped like the SMS rows so both go through the same grouping.
+     *
+     * Four bulk queries and no per-message work. The obvious route - reading each message's
+     * sender from `content://mms/<id>/addr` - is per-message only; a bulk query against that
+     * table returns nothing, which on a real inbox would mean over a thousand round trips. The
+     * thread's recipient resolves the same address in one pass instead.
+     */
+    private fun loadUnreadMms(): List<SpamMessage> {
+        val threadAddresses = threadAddresses()
+        if (threadAddresses.isEmpty()) return emptyList()
+        val bodies = mmsTextBodies()
+
+        val cursor = context.contentResolver.query(
+            Telephony.Mms.Inbox.CONTENT_URI,
+            arrayOf(Telephony.Mms._ID, Telephony.Mms.THREAD_ID, Telephony.Mms.DATE),
+            "${Telephony.Mms.READ} = 0",
+            null,
+            "${Telephony.Mms.DATE} DESC",
+        ) ?: return emptyList()
+
+        return cursor.use {
+            val idIdx = it.getColumnIndexOrThrow(Telephony.Mms._ID)
+            val threadIdx = it.getColumnIndexOrThrow(Telephony.Mms.THREAD_ID)
+            val dateIdx = it.getColumnIndexOrThrow(Telephony.Mms.DATE)
+            buildList {
+                while (it.moveToNext()) {
+                    val threadId = it.getLong(threadIdx)
+                    // Absent for a group thread, which is skipped on purpose: it has no single
+                    // spam sender, and replying STOP into one would text strangers.
+                    val address = threadAddresses[threadId] ?: continue
+                    val id = it.getLong(idIdx)
+                    add(
+                        SpamMessage(
+                            id = id,
+                            address = address,
+                            body = bodies[id].orEmpty(),
+                            // MMS stores seconds where SMS stores milliseconds. Without this
+                            // every MMS sorts to 1970 and shows a 1970 date.
+                            date = it.getLong(dateIdx) * 1000L,
+                            threadId = threadId,
+                            subscriptionId = -1,
+                            source = MessageSource.MMS,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    /** thread id -> the single other party, for one-to-one threads only. */
+    private fun threadAddresses(): Map<Long, String> {
+        val recipients = HashMap<Long, String>()
+        context.contentResolver.query(
+            Uri.parse("content://mms-sms/canonical-addresses"),
+            arrayOf("_id", "address"),
+            null,
+            null,
+            null,
+        )?.use {
+            while (it.moveToNext()) recipients[it.getLong(0)] = it.getString(1).orEmpty()
+        }
+        if (recipients.isEmpty()) return emptyMap()
+
+        val threads = HashMap<Long, String>()
+        context.contentResolver.query(
+            Uri.parse("content://mms-sms/conversations?simple=true"),
+            arrayOf("_id", "recipient_ids"),
+            null,
+            null,
+            null,
+        )?.use {
+            while (it.moveToNext()) {
+                val ids = it.getString(1).orEmpty().trim().split(" ").filter { id -> id.isNotBlank() }
+                if (ids.size != 1) continue
+                val address = recipients[ids.single().toLongOrNull() ?: continue] ?: continue
+                // RCS and email-gateway participants come through this table too, as
+                // "...@rcs.google.com". They are not SMS-addressable: an opt-out sent there
+                // would fail, and a number cannot be blocked that has no number. Listing them
+                // would fill the inbox with senders nothing in this app can act on.
+                if (address.isNotBlank() && '@' !in address) threads[it.getLong(0)] = address
+            }
+        }
+        return threads
+    }
+
+    /** message id -> its text/plain part, which is what the keyword detector reads. */
+    private fun mmsTextBodies(): Map<Long, String> {
+        val bodies = HashMap<Long, String>()
+        context.contentResolver.query(
+            Uri.parse("content://mms/part"),
+            arrayOf("mid", "text"),
+            "ct = ?",
+            arrayOf("text/plain"),
+            null,
+        )?.use {
+            while (it.moveToNext()) {
+                val text = it.getString(1) ?: continue
+                val mid = it.getLong(0)
+                // A message can have several text parts; the first is the body proper.
+                if (mid !in bodies) bodies[mid] = text
+            }
+        }
+        return bodies
+    }
 
     /**
      * Works out, from the message history alone, which senders have already been told to stop
@@ -190,23 +300,38 @@ class SmsRepository(private val context: Context) {
             context.contentResolver.insert(Telephony.Sms.Sent.CONTENT_URI, values)
         }
 
-    suspend fun markRead(messageIds: List<Long>): Int = withContext(Dispatchers.IO) {
-        if (messageIds.isEmpty()) return@withContext 0
-        val values = ContentValues().apply {
-            put(Telephony.Sms.READ, 1)
-            put(Telephony.Sms.SEEN, 1)
+    suspend fun markRead(messages: List<MessageRef>): Int = withContext(Dispatchers.IO) {
+        eachSource(messages) { uri, ids ->
+            val values = ContentValues().apply {
+                put(Telephony.Sms.READ, 1)
+                put(Telephony.Sms.SEEN, 1)
+            }
+            context.contentResolver.update(uri, values, idSelection(ids), null)
         }
-        context.contentResolver.update(
-            Telephony.Sms.CONTENT_URI,
-            values,
-            idSelection(messageIds),
-            null,
-        )
     }
 
-    suspend fun delete(messageIds: List<Long>): Int = withContext(Dispatchers.IO) {
-        if (messageIds.isEmpty()) return@withContext 0
-        context.contentResolver.delete(Telephony.Sms.CONTENT_URI, idSelection(messageIds), null)
+    suspend fun delete(messages: List<MessageRef>): Int = withContext(Dispatchers.IO) {
+        eachSource(messages) { uri, ids ->
+            context.contentResolver.delete(uri, idSelection(ids), null)
+        }
+    }
+
+    /**
+     * Applies [action] once per provider table. SMS and MMS are separate stores with separate id
+     * spaces, so a single id list would silently address the wrong rows in one of them.
+     */
+    private inline fun eachSource(
+        messages: List<MessageRef>,
+        action: (uri: Uri, ids: List<Long>) -> Int,
+    ): Int {
+        if (messages.isEmpty()) return 0
+        return messages.groupBy { it.source }.entries.sumOf { (source, refs) ->
+            val uri = when (source) {
+                MessageSource.SMS -> Telephony.Sms.CONTENT_URI
+                MessageSource.MMS -> Telephony.Mms.CONTENT_URI
+            }
+            runCatching { action(uri, refs.map { it.id }) }.getOrDefault(0)
+        }
     }
 
     /** Ids come from the provider itself, so inlining them cannot smuggle in SQL. */

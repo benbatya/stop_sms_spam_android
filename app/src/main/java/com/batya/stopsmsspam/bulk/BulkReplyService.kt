@@ -236,12 +236,12 @@ class BulkReplyService : Service() {
 
         runCatching {
             if (plan.delete) {
-                repository.delete(plan.messageIds)
+                repository.delete(plan.messages)
                 // Deleting the thread implies not wanting its reply either, so the sender's
                 // acknowledgement is dropped on arrival instead of landing back in the inbox.
                 SenderMemory(this).markAutoDeleteResponses(plan.address)
             } else {
-                repository.markRead(plan.messageIds)
+                repository.markRead(plan.messages)
             }
         }.onFailure { Log.e(TAG, "Post-send cleanup failed", it) }
 
