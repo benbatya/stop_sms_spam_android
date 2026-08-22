@@ -198,17 +198,17 @@ private fun SenderRow(
                     UnsubscribedRow(sender, onMarkRead, onDelete, onBlock)
                 }
 
-                // The disposition only matters once the sender is actually selected, and showing
-                // it on every row would bury the message under controls.
-                if (selected) {
-                    DispositionControls(
-                        sender = sender,
-                        deletes = deletes,
-                        blocks = blocks,
-                        onSetDelete = onSetDelete,
-                        onSetBlock = onSetBlock,
-                    )
-                }
+                // Always shown, disabled until the sender is selected. Hiding them meant the
+                // row changed height on every selection and, more to the point, that the
+                // defaults - notably a pre-ticked "block" on a sender that ignored its opt-out -
+                // were invisible until you had already committed to acting on it.
+                DispositionControls(
+                    enabled = selected,
+                    deletes = deletes,
+                    blocks = blocks,
+                    onSetDelete = onSetDelete,
+                    onSetBlock = onSetBlock,
+                )
             }
         }
     }
@@ -224,28 +224,39 @@ private fun SenderRow(
  */
 @Composable
 private fun DispositionControls(
-    sender: SpamSender,
+    enabled: Boolean,
     deletes: Boolean,
     blocks: Boolean,
     onSetDelete: (Boolean) -> Unit,
     onSetBlock: (Boolean) -> Unit,
 ) {
-    // Everything here sits inside the row's own clickable card, so any tap these controls do not
-    // handle reaches it and toggles the selection - hiding the controls the user was aiming at.
-    // The container swallows what the rows below do not: their padding, and the gap between them.
-    Column(
-        Modifier
+    // These sit inside the row's own clickable card, so any tap they do not handle reaches it
+    // and toggles the selection - which, while enabled, would hide nothing but would undo the
+    // very selection being configured. The container swallows what the rows below do not.
+    //
+    // Disabled, the swallow is deliberately dropped: a tap should then do what tapping anywhere
+    // else on the card does, select the sender, which is also what makes these usable.
+    Row(
+        modifier = Modifier
             .fillMaxWidth()
-            .noRippleClickable { },
+            .then(if (enabled) Modifier.noRippleClickable { } else Modifier),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        // Labels state the action, not the current setting: the checkbox already carries that,
+        // and a label that flips between "Delete" and "Keep" makes the pair read as two
+        // different questions. Unticked "Delete" means the thread is kept and marked read - the
+        // Review summary spells that consequence out.
         DispositionToggle(
+            enabled = enabled,
             checked = deletes,
-            label = if (deletes) "Delete these messages" else "Keep them, just mark read",
+            label = "Delete",
             onToggle = onSetDelete,
         )
         DispositionToggle(
+            enabled = enabled,
             checked = blocks,
-            label = "Block this number",
+            label = "Block",
             onToggle = onSetBlock,
             color = if (blocks) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
         )
@@ -261,19 +272,26 @@ private fun DispositionControls(
  */
 @Composable
 private fun DispositionToggle(
+    enabled: Boolean,
     checked: Boolean,
     label: String,
     onToggle: (Boolean) -> Unit,
     color: Color = Color.Unspecified,
 ) {
     Row(
+        // Wraps its content rather than filling: the two toggles sit side by side, so each must
+        // claim only its own width or the first would swallow the row.
         modifier = Modifier
-            .fillMaxWidth()
-            .noRippleClickable { onToggle(!checked) },
+            .then(if (enabled) Modifier.noRippleClickable { onToggle(!checked) } else Modifier),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Checkbox(checked = checked, onCheckedChange = onToggle)
-        Text(label, style = MaterialTheme.typography.labelMedium, color = color)
+        Checkbox(checked = checked, onCheckedChange = onToggle, enabled = enabled)
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            // Dimmed rather than hidden: the state still reads, it just is not actionable yet.
+            color = if (enabled) color else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+        )
     }
 }
 

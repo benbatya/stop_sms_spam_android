@@ -38,13 +38,36 @@ Reproduced before fixing, on the Android 12 emulator: with `15557654321` selecte
 words "Delete these messages" **deselected the sender** — checkbox cleared, controls gone. The
 setting it was aimed at did not change.
 
-After the fix, the same tap at the same coordinates leaves the row selected and flips the label
-to "Keep them, just mark read". Four label taps across both controls produced zero accidental
+After the fix, the same tap at the same coordinates leaves the row selected and flips the
+setting. Four label taps across both controls produced zero accidental
 deselections, and the defaults were toggled back to confirm both directions.
 
 One incidental finding: because each toggle row is `fillMaxWidth`, a tap well to the right of a
 label still lands inside that row and toggles it. That is the intended hit target rather than a
 gap, so the container's swallow only has the vertical space between rows left to catch.
+
+## Two follow-on changes
+
+**The controls are now always visible, disabled until the sender is selected**, rather than
+appearing on selection. Hiding them meant the row changed height on every tap and, more
+importantly, that the defaults were invisible until the user had already committed to acting on
+the sender — including a pre-ticked **Block** on one that ignored its own opt-out, which is the
+single most consequential default in the app.
+
+Disabled, the container deliberately *stops* swallowing taps: one should then do what tapping
+anywhere else on the card does — select the sender, which is also what makes the controls usable.
+So the same tap means "enable these" when they are off and "toggle this" when they are on, and
+never means "deselect".
+
+**Laid out horizontally** rather than stacked, which matters more now that they occupy the row
+permanently. Each toggle wraps its own width instead of filling, or the first would swallow the
+row.
+
+The labels became `Delete` and `Block`, stating the *action* rather than the current setting.
+The previous first label flipped between "Delete these messages" and "Keep them, just mark read",
+which made a checkbox pair read as two different questions — the checkbox already carries the
+state. An unticked "Delete" means the thread is kept and marked read, and Review's summary
+spells that consequence out.
 
 ## Note on the shape of the bug
 
