@@ -150,14 +150,21 @@ The row promised one thing and the plan did another.
 Both now key on `canReply`. Worth noting the shape of the mistake: two predicates that agreed in
 every case that had been looked at, and disagreed only in the state nothing had exercised yet.
 
-## Follow-up not done here
+## Copy that claimed more than the code knows
 
-The Review screen says "Replying to a **scam number** does not stop it". The app does no scam
-detection whatsoever — the only signal is that a sender's message contained no opt-out
-instruction, which is a proxy for "a reply probably will not help", not for "this is a scam". A
-scammer that writes "Reply STOP to opt out" is treated as entirely legitimate. The wording
-overstates what the code knows and should be softened; left alone here because it is a copy
-decision, not part of this change.
+Review said "Replying to a **scam number** does not stop it". The app does no scam detection
+whatsoever: the only signal is that a sender's message contained no opt-out instruction. That is
+a proxy for "a reply probably will not help", and it cuts both ways — a legitimate sender that
+omits the line is flagged, and a scammer that writes "Reply STOP to opt out" is not flagged at
+all.
+
+Reworded to say what is actually known: "N of these senders never said how to opt out. A reply
+probably will not stop them, and it does tell them the number is live." The same overstatement
+was corrected in the README, in `SpamSender.hasOptOutLanguage`'s doc, and in the detector's.
+
+The README also carried two stale facts from changes that had already landed: the pacing range
+(still "5–300s, default 60s" rather than the Fibonacci steps) and a reference to the renamed
+button. A feature list that quietly disagrees with the app is worse than no feature list.
 
 ## Known limitation
 

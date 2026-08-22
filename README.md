@@ -16,17 +16,26 @@ Google Play restricts to messaging apps.
 2. **Detects the opt-out keyword per sender.** Bulk senders are required to state it, but they do
    not all use `STOP` — `END`, `QUIT`, `UNSUB` and `CANCEL` all show up. Each detection carries a
    confidence, and every keyword is editable before sending.
-3. **Flags senders that never offered an opt-out.** Replying to an outright scam does not stop it;
-   it confirms your number is live. Those rows are marked, and "Select all with opt-out" skips them.
-4. **Sends the batch slowly**, with a configurable delay (5–300s, default 60s) and optional random
-   jitter, from a foreground service with live progress and a working Cancel.
-5. **Cleans up after a confirmed send** — marks the spam read (or deletes it) and files your reply
-   into the real conversation thread.
+3. **Flags senders that never said how to opt out.** A reply probably will not stop them, and it
+   does tell them the number is live. Those rows are marked, and Review counts them in a warning
+   before you send. This is the *absence* of an opt-out instruction, not scam detection — the app
+   does none. A legitimate sender that omits the line is flagged; a scammer that writes "Reply
+   STOP to opt out" is not.
+4. **Sends the batch slowly**, with the delay stepped over the Fibonacci sequence — 1, 2, 3, 5, 8,
+   13, 21, 34, 55, 89 seconds, default 5 — plus optional random jitter, from a foreground service
+   with live progress and a working Cancel. The top of that range clears Android's own
+   outgoing-SMS check; the low steps are where a small batch is actually tuned.
+5. **Remembers who has already been told to stop**, by reading the message history rather than
+   keeping its own record. A sender you have opted out of is cleared rather than texted again,
+   and one that acknowledged the opt-out and then messaged anyway is flagged and can be blocked.
+6. **Cleans up per sender** — delete by default, keep-and-mark-read on request, block for a sender
+   that ignored its own opt-out — and files your reply into the real conversation thread.
 
 ### Dry run is on by default
 
 The first run walks through the entire pipeline — pacing, progress, cleanup decisions — without
-handing a single message to the radio. Turn it off in Review when you are satisfied.
+handing a single message to the radio, and without deleting or blocking anything. Turn it off in
+Review when you are satisfied.
 
 ## The default-SMS-app role, and why you should hand it back
 

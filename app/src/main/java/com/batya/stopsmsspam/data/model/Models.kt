@@ -75,8 +75,13 @@ data class SpamSender(
     val ignoredOptOut: Boolean get() = optOutViolatedAt != null
 
     /**
-     * False when the sender never told us how to opt out. Replying to these is usually a bad
-     * idea - it confirms to a scammer that the number is live - so the UI flags them.
+     * False when the sender's message contained no opt-out instruction at all.
+     *
+     * This is **not** scam detection, and nothing in the app is: it is the absence of one
+     * signal, which makes it a proxy for "a reply probably will not help here". It cuts both
+     * ways - a legitimate sender that forgot the opt-out line is flagged, and a scammer that
+     * writes "Reply STOP to opt out" is not. What it does support is the warning that replying
+     * to such a sender tells them the number is live while likely stopping nothing.
      */
     val hasOptOutLanguage: Boolean get() = keyword.confidence != KeywordConfidence.ASSUMED
 }

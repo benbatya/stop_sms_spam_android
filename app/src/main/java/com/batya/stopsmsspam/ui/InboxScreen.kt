@@ -316,7 +316,8 @@ private fun UnsubscribedRow(
 
 /**
  * The chip carries the warning that matters most: a sender whose message never mentioned an
- * opt-out probably will not honour one, and replying tells a scammer the number is live.
+ * opt-out probably will not honour one, and replying tells them the number is live. Note this is
+ * the absence of a signal, not a judgement about the sender - see `SpamSender.hasOptOutLanguage`.
  */
 @Composable
 private fun KeywordChip(keyword: String, confidence: KeywordConfidence) {

@@ -159,8 +159,8 @@ fun ReviewScreen(
         if (noOptOut > 0) {
             item {
                 WarningCard(
-                    "$noOptOut of these senders never offered a way to opt out. Replying to a " +
-                        "scam number does not stop it - it confirms your number is live. " +
+                    "$noOptOut of these senders never said how to opt out. A reply probably " +
+                        "will not stop them, and it does tell them the number is live. " +
                         "Consider removing them below.",
                     modifier = Modifier.padding(horizontal = 8.dp),
                 )

@@ -69,7 +69,7 @@ object OptOutKeywordDetector {
      * Anchored to the *end* of the body on purpose. Mid-sentence, "End2End" is ordinary English
      * ("our End2End encrypted chat is live"), and a false positive there does more than mislabel
      * a row: it flips [SpamSender.hasOptOutLanguage] to true, which is what "Select all with
-     * opt-out" relies on to keep the user from replying to outright scam numbers. A trailing
+     * opt-out" warning relies on to steer the user away from senders that will not honour one. A trailing
      * token is a sign-off; the same token inside a sentence is prose.
      */
     private val TRAILING_COMPOUND = Regex("""\b([A-Za-z]{2,15})2([A-Za-z]{2,15})[\s.!?]*$""")
