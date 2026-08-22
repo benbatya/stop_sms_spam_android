@@ -29,7 +29,7 @@ if you ever run one by hand.
 | `bare` | short code | keyword `STOP` at *likely* confidence, from a shouted bare keyword |
 | `stop2stop` | short code | spam ending `... STOP2STOP` — keyword `STOP` at *likely*, from the suffix |
 | `end2end` | long number | spam ending `... End2End` — keyword `END` at *likely*, mixed case and all |
-| `scam` | long number | **no keyword** — flagged red, "No opt-out offered", excluded from "Select all with opt-out" |
+| `scam` | long number | **no keyword** — flagged red, "No opt-out offered", and counted in Review's warning about replying to a sender that never offered one |
 | `repeat` | one short code ×3 | collapses to **one** row, "3 unread messages - one reply covers all of them" |
 | `mixed` | all of the above | the default; the general-purpose case |
 
@@ -37,8 +37,8 @@ The last two exercise the trailing-compound rule ("2" as shorthand for "to"), wh
 senders append these — a sign-off rather than a spelled-out instruction. It is anchored to the
 **end** of the message deliberately: mid-sentence, `End2End` is ordinary English ("our End2End
 encrypted chat is live"), and detecting it there would wrongly mark the sender as offering an
-opt-out — which is what "Select all with opt-out" trusts to keep you from replying to scam
-numbers. An explicit instruction still wins, so `Reply STOP2STOP to opt out` yields the whole
+opt-out — which is what Review's "never offered a way to opt out" warning relies on to steer you
+away from replying to a sender that will not honour it. An explicit instruction still wins, so `Reply STOP2STOP to opt out` yields the whole
 token `STOP2STOP`, not `STOP`.
 
 `--count N` and `--gap SECONDS` repeat a send, which is how to build a batch large enough to

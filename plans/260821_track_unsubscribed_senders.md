@@ -85,7 +85,7 @@ rather than silently doing nothing.
 
 ## Verified
 
-56 unit tests (up from 42). The ones that matter: a solicitation is not its own confirmation;
+57 unit tests (up from 42). The ones that matter: a solicitation is not its own confirmation;
 `isOptOutReply` accepts a bare keyword and rejects a sentence containing one; an unconfirmed
 opt-out cannot be "violated"; a sender that only repeats its acknowledgement is not accused of
 violating it.
@@ -149,6 +149,15 @@ The row promised one thing and the plan did another.
 
 Both now key on `canReply`. Worth noting the shape of the mistake: two predicates that agreed in
 every case that had been looked at, and disagreed only in the state nothing had exercised yet.
+
+## Follow-up not done here
+
+The Review screen says "Replying to a **scam number** does not stop it". The app does no scam
+detection whatsoever — the only signal is that a sender's message contained no opt-out
+instruction, which is a proxy for "a reply probably will not help", not for "this is a scam". A
+scammer that writes "Reply STOP to opt out" is treated as entirely legitimate. The wording
+overstates what the code knows and should be softened; left alone here because it is a copy
+decision, not part of this change.
 
 ## Known limitation
 
