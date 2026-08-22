@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -35,8 +37,14 @@ fun InboxScreen(
     state: UiState,
     contentPadding: PaddingValues,
     onToggle: (SpamSender) -> Unit,
-    onSelectAllWithOptOut: () -> Unit,
+    onSelectAll: () -> Unit,
     onClearSelection: () -> Unit,
+    onMarkRead: (SpamSender) -> Unit,
+    onDelete: (SpamSender) -> Unit,
+    onMarkAllUnsubscribedRead: () -> Unit,
+    onBlock: (SpamSender) -> Unit,
+    onSetDelete: (SpamSender, Boolean) -> Unit,
+    onSetBlock: (SpamSender, Boolean) -> Unit,
 ) {
     if (state.loading && state.senders.isEmpty()) {
         Column(
@@ -72,8 +80,32 @@ fun InboxScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onSelectAllWithOptOut) { Text("Select all with opt-out") }
+                TextButton(onClick = onSelectAll) { Text("Select all") }
                 TextButton(onClick = onClearSelection) { Text("Clear") }
+            }
+        }
+
+        val unsubscribedCount = state.senders.count { it.isUnsubscribed }
+        if (unsubscribedCount > 0) {
+            item {
+                Card(
+                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    ),
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text(
+                            countOf(unsubscribedCount, "sender") +
+                                " already unsubscribed. Their newer messages are usually just " +
+                                "the confirmation - clear them rather than replying again.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        TextButton(onClick = onMarkAllUnsubscribedRead) {
+                            Text("Mark all as read")
+                        }
+                    }
+                }
             }
         }
 
@@ -83,6 +115,13 @@ fun InboxScreen(
                 keyword = state.keywordFor(sender),
                 selected = sender.normalizedAddress in state.selected,
                 onToggle = { onToggle(sender) },
+                onMarkRead = { onMarkRead(sender) },
+                onDelete = { onDelete(sender) },
+                onBlock = { onBlock(sender) },
+                deletes = state.deletesMessages(sender),
+                blocks = state.blocksNumber(sender),
+                onSetDelete = { onSetDelete(sender, it) },
+                onSetBlock = { onSetBlock(sender, it) },
             )
         }
     }
@@ -94,6 +133,13 @@ private fun SenderRow(
     keyword: String,
     selected: Boolean,
     onToggle: () -> Unit,
+    onMarkRead: () -> Unit,
+    onDelete: () -> Unit,
+    onBlock: () -> Unit,
+    deletes: Boolean,
+    blocks: Boolean,
+    onSetDelete: (Boolean) -> Unit,
+    onSetBlock: (Boolean) -> Unit,
 ) {
     Card(
         modifier = Modifier
@@ -107,6 +153,8 @@ private fun SenderRow(
         },
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
+            // Selectable whether or not a reply is due: an already-opted-out thread is still
+            // something the user wants dealt with, it just gets cleared instead of texted.
             Checkbox(checked = selected, onCheckedChange = { onToggle() })
             Column(
                 Modifier.padding(start = 8.dp),
@@ -138,15 +186,138 @@ private fun SenderRow(
                     overflow = TextOverflow.Ellipsis,
                 )
 
-                KeywordChip(keyword, sender.keyword.confidence)
+                // Keyed on canReply, not on isUnsubscribed: a sender that was sent an opt-out
+                // and never answered is still one the batch will clear rather than text, and
+                // showing it a "Reply STOP" chip would promise something that will not happen.
+                if (sender.canReply) {
+                    KeywordChip(keyword, sender.keyword.confidence)
+                } else {
+                    UnsubscribedRow(sender, onMarkRead, onDelete, onBlock)
+                }
+
+                // The disposition only matters once the sender is actually selected, and showing
+                // it on every row would bury the message under controls.
+                if (selected) {
+                    DispositionControls(
+                        sender = sender,
+                        deletes = deletes,
+                        blocks = blocks,
+                        onSetDelete = onSetDelete,
+                        onSetBlock = onSetBlock,
+                    )
+                }
             }
         }
     }
 }
 
 /**
+ * Per-sender choice of what happens to the thread afterwards.
+ *
+ * Deleting is the default, because being rid of these is the point of the app; the toggle is
+ * there for the thread worth keeping. Blocking defaults on only for a sender that acknowledged
+ * an opt-out and messaged anyway, and is spelled out rather than silent - it is system-wide and
+ * outlives this app, so it should never happen without the user seeing it.
+ */
+@Composable
+private fun DispositionControls(
+    sender: SpamSender,
+    deletes: Boolean,
+    blocks: Boolean,
+    onSetDelete: (Boolean) -> Unit,
+    onSetBlock: (Boolean) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(checked = deletes, onCheckedChange = onSetDelete)
+        Text(
+            if (deletes) "Delete these messages" else "Keep them, just mark read",
+            style = MaterialTheme.typography.labelMedium,
+        )
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(checked = blocks, onCheckedChange = onSetBlock)
+        Text(
+            "Block this number",
+            style = MaterialTheme.typography.labelMedium,
+            color = if (blocks) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+/**
+ * What a sender that has already been told to stop offers instead of a reply.
+ *
+ * The two states are shown apart on purpose. A confirmed opt-out is finished business; one the
+ * sender never acknowledged is not, and collapsing them would tell the user a sender is done
+ * with them when nothing supports that.
+ */
+@Composable
+private fun UnsubscribedRow(
+    sender: SpamSender,
+    onMarkRead: () -> Unit,
+    onDelete: () -> Unit,
+    onBlock: () -> Unit,
+) {
+    val status = sender.optedOut ?: return
+    val dates = DateFormat.getDateInstance(DateFormat.MEDIUM)
+    val sentOn = dates.format(Date(status.sentAtMillis))
+
+    val label = when {
+        sender.ignoredOptOut ->
+            "STOP IGNORED - confirmed unsubscribed, then texted again " +
+                dates.format(Date(sender.optOutViolatedAt!!))
+        status.isConfirmed ->
+            "Unsubscribed - they confirmed on ${dates.format(Date(status.confirmedAtMillis!!))}"
+        else -> "\"${status.keyword}\" sent $sentOn - no confirmation yet"
+    }
+
+    AssistChip(
+        onClick = {},
+        enabled = false,
+        label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+        colors = when {
+            sender.ignoredOptOut -> AssistChipDefaults.assistChipColors(
+                disabledContainerColor = MaterialTheme.colorScheme.errorContainer,
+                disabledLabelColor = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            status.isConfirmed -> AssistChipDefaults.assistChipColors(
+                disabledContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                disabledLabelColor = MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+            else -> AssistChipDefaults.assistChipColors(
+                disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        },
+    )
+
+    if (sender.ignoredOptOut) {
+        Text(
+            "This sender agreed to stop and then messaged you anyway. Replying again will not " +
+                "help - it already ignored its own opt-out.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+
+    Text(
+        "Select to clear this thread - no reply will be sent.",
+        style = MaterialTheme.typography.labelSmall,
+    )
+
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (sender.ignoredOptOut) {
+            TextButton(onClick = onBlock) { Text("Block number") }
+        }
+        TextButton(onClick = onMarkRead) { Text("Mark read") }
+        TextButton(onClick = onDelete) { Text("Delete") }
+    }
+}
+
+/**
  * The chip carries the warning that matters most: a sender whose message never mentioned an
- * opt-out probably will not honour one, and replying tells a scammer the number is live.
+ * opt-out probably will not honour one, and replying tells them the number is live. Note this is
+ * the absence of a signal, not a judgement about the sender - see `SpamSender.hasOptOutLanguage`.
  */
 @Composable
 private fun KeywordChip(keyword: String, confidence: KeywordConfidence) {

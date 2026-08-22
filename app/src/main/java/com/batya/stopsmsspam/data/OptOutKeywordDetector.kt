@@ -69,7 +69,7 @@ object OptOutKeywordDetector {
      * Anchored to the *end* of the body on purpose. Mid-sentence, "End2End" is ordinary English
      * ("our End2End encrypted chat is live"), and a false positive there does more than mislabel
      * a row: it flips [SpamSender.hasOptOutLanguage] to true, which is what "Select all with
-     * opt-out" relies on to keep the user from replying to outright scam numbers. A trailing
+     * opt-out" warning relies on to steer the user away from senders that will not honour one. A trailing
      * token is a sign-off; the same token inside a sentence is prose.
      */
     private val TRAILING_COMPOUND = Regex("""\b([A-Za-z]{2,15})2([A-Za-z]{2,15})[\s.!?]*$""")
@@ -109,6 +109,24 @@ object OptOutKeywordDetector {
             ?.let { return DetectedKeyword(it.groupValues[1].uppercase(), KeywordConfidence.LIKELY) }
 
         return null
+    }
+
+    /**
+     * Whether an outgoing message body *is* an opt-out reply, rather than ordinary conversation.
+     *
+     * Used to find opt-outs in the Sent box, which is how the app knows a sender has already
+     * been told to stop - including ones sent from a different messaging app. An opt-out reply
+     * is the bare keyword and nothing else, so requiring a single token keeps a real message
+     * that merely mentions one ("did the STOP work?") from counting.
+     */
+    fun isOptOutReply(body: String): Boolean {
+        val token = body.trim()
+        if (token.isEmpty() || token.any { it.isWhitespace() }) return false
+        if (!token.all { it.isLetterOrDigit() }) return false
+        if (token.length !in 2..15) return false
+        val upper = token.uppercase()
+        // Either a keyword we know, or shouted - the convention these are written in.
+        return upper in KNOWN_KEYWORDS || TRAILING_COMPOUND.matches(token) || token == upper
     }
 
     /** Same as [detect] but substitutes [fallback] instead of returning null. */

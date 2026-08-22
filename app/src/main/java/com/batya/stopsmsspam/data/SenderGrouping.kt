@@ -13,15 +13,30 @@ import com.batya.stopsmsspam.data.model.SpamSender
 object SenderGrouping {
 
     /**
+     * @param optedOut senders already sent a confirmed opt-out, keyed by normalized address.
      * @param messages unread messages, newest first. The first message seen for a sender is the
      *  one quoted in the UI and the one its keyword is detected from.
      */
-    fun group(messages: List<SpamMessage>, fallbackKeyword: String): List<SpamSender> {
+    fun group(
+        messages: List<SpamMessage>,
+        fallbackKeyword: String,
+        optedOut: Map<String, OptOutStatus> = emptyMap(),
+    ): List<SpamSender> {
         val builders = LinkedHashMap<String, Builder>()
+        // Latest offending message per sender: what makes the violation visible and recent.
+        val violations = HashMap<String, Long>()
 
         for (message in messages) {
             val key = PhoneAddress.normalize(message.address)
             if (key.isEmpty()) continue
+
+            val status = optedOut[key]
+            if (status?.confirmedAtMillis != null &&
+                message.date > status.confirmedAtMillis &&
+                !OptOutConfirmationDetector.isConfirmation(message.body)
+            ) {
+                violations[key] = maxOf(violations[key] ?: 0L, message.date)
+            }
 
             val builder = builders.getOrPut(key) {
                 Builder(
@@ -44,6 +59,8 @@ object SenderGrouping {
                 latestDate = builder.latestDate,
                 subscriptionId = builder.subscriptionId,
                 keyword = OptOutKeywordDetector.detectOrFallback(builder.latestBody, fallbackKeyword),
+                optedOut = optedOut[builder.normalizedAddress],
+                optOutViolatedAt = violations[builder.normalizedAddress],
             )
         }
     }

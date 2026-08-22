@@ -44,8 +44,11 @@ fun ReviewScreen(
     onKeywordChange: (SpamSender, String) -> Unit,
     onSettingsChange: (com.batya.stopsmsspam.data.AppSettings) -> Unit,
 ) {
-    val senders = state.selectedSenders
     val settings = state.settings
+    // Only senders that will actually be texted matter for pacing, throttling and the
+    // short-code warning; a cleared thread never touches the radio.
+    val senders = state.selectedForReply
+    val cleanupOnly = state.selectedForCleanup
     val throttled = SendPacing.exceedsFrameworkThrottle(senders.size, settings.delaySeconds)
     val noOptOut = senders.count { !it.hasOptOutLanguage }
     val shortCodes = senders.count { PhoneAddress.isShortCode(it.displayAddress) }
@@ -130,17 +133,13 @@ fun ReviewScreen(
                         checked = settings.dryRun,
                         onCheckedChange = { onSettingsChange(settings.copy(dryRun = it)) },
                     )
-                    SettingSwitch(
-                        title = "Mark the spam as read",
-                        subtitle = "Clears it from your unread list once the reply is confirmed",
-                        checked = settings.markReadAfterSend,
-                        onCheckedChange = { onSettingsChange(settings.copy(markReadAfterSend = it)) },
-                    )
-                    SettingSwitch(
-                        title = "Delete the spam instead",
-                        subtitle = "Permanently removes those messages. Overrides mark-as-read.",
-                        checked = settings.deleteAfterSend,
-                        onCheckedChange = { onSettingsChange(settings.copy(deleteAfterSend = it)) },
+                    // What becomes of each thread is chosen per sender in the list, not here:
+                    // one global switch cannot say "delete these, keep that one, block the one
+                    // that ignored its opt-out".
+                    Text(
+                        "What happens to each thread - delete, keep, or block - is set per " +
+                            "sender when you select it. The summary below shows the result.",
+                        style = MaterialTheme.typography.labelSmall,
                     )
                 }
             }
@@ -160,8 +159,8 @@ fun ReviewScreen(
         if (noOptOut > 0) {
             item {
                 WarningCard(
-                    "$noOptOut of these senders never offered a way to opt out. Replying to a " +
-                        "scam number does not stop it - it confirms your number is live. " +
+                    "$noOptOut of these senders never said how to opt out. A reply probably " +
+                        "will not stop them, and it does tell them the number is live. " +
                         "Consider removing them below.",
                     modifier = Modifier.padding(horizontal = 8.dp),
                 )
@@ -169,11 +168,58 @@ fun ReviewScreen(
         }
 
         item {
-            Text(
-                "Messages to send",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-            )
+            val toDelete = state.selectedSenders.count { state.deletesMessages(it) }
+            val toKeep = state.selectedSenders.size - toDelete
+            val toBlock = state.selectedSenders.count { state.blocksNumber(it) }
+            Card(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Then", style = MaterialTheme.typography.titleSmall)
+                    if (toDelete > 0) Text("• " + countOf(toDelete, "thread") + " deleted",
+                        style = MaterialTheme.typography.bodySmall)
+                    if (toKeep > 0) Text("• " + countOf(toKeep, "thread") + " kept, marked read",
+                        style = MaterialTheme.typography.bodySmall)
+                    if (toBlock > 0) {
+                        Text(
+                            "• " + countOf(toBlock, "number") + " blocked - system-wide, and it " +
+                                "outlives this app",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            }
+        }
+
+        if (cleanupOnly.isNotEmpty()) {
+            item {
+                Card(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            countOf(cleanupOnly.size, "thread") + " will be cleared, not replied to",
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            "These senders have already been sent an opt-out. Their threads are " +
+                                "marked read (or deleted) without sending anything, and they do " +
+                                "not count towards the delay.",
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                        cleanupOnly.forEach {
+                            Text("• ${it.displayAddress}", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        }
+
+        if (senders.isNotEmpty()) {
+            item {
+                Text(
+                    "Messages to send",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
         }
 
         items(senders, key = { it.normalizedAddress }) { sender ->

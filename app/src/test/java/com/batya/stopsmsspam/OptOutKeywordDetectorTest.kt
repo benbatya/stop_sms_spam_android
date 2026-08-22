@@ -73,7 +73,8 @@ class OptOutKeywordDetectorTest {
     @Test
     fun `does not read a compound out of the middle of a sentence`() {
         // "End2End" is ordinary English; treating it as an opt-out would wrongly mark the
-        // sender as offering one, which is what "Select all with opt-out" trusts.
+        // sender as offering one, and the Review screen's "never offered a way to opt out"
+        // warning is what stands between the user and texting a scam number.
         assertNull(OptOutKeywordDetector.detect("Our End2End encrypted chat is now live"))
         assertNull(OptOutKeywordDetector.detect("Save big on End2End delivery today"))
     }

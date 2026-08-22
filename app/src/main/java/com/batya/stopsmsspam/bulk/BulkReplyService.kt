@@ -7,8 +7,10 @@ import android.content.pm.ServiceInfo
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.ServiceCompat
+import com.batya.stopsmsspam.data.BlockedNumbers
 import com.batya.stopsmsspam.data.SmsRepository
 import com.batya.stopsmsspam.data.model.BatchProgress
+import com.batya.stopsmsspam.data.model.ReplyPlan
 import com.batya.stopsmsspam.data.model.SendOutcome
 import com.batya.stopsmsspam.data.model.SendStatus
 import com.batya.stopsmsspam.sms.Notifications
@@ -90,6 +92,7 @@ class BulkReplyService : Service() {
 
     private suspend fun runBatch(snapshot: BatchSnapshot) {
         val repository = SmsRepository(this)
+        val blockedNumbers = BlockedNumbers(this)
         val store = BatchStore(this)
         val outcomes = snapshot.outcomes.toMutableList()
 
@@ -109,7 +112,28 @@ class BulkReplyService : Service() {
             BulkReplyController.update { it.copy(currentAddress = plan.address, nextSendAtMillis = null) }
             publish(outcomes)
 
-            val outcome = if (snapshot.dryRun) {
+            val outcome = if (!plan.sendReply) {
+                // Already opted out of: clean the thread up, send nothing. Not gated on dryRun
+                // because marking read is what the user asked for either way - and a dry run
+                // that silently skipped it would misrepresent what the real run does.
+                val cleared = if (snapshot.dryRun) {
+                    false
+                } else {
+                    applyPostSend(repository, blockedNumbers, plan)
+                }
+                SendOutcome(
+                    address = plan.address,
+                    keyword = plan.keyword,
+                    status = SendStatus.CLEARED,
+                    detail = when {
+                        snapshot.dryRun -> "Dry run - would be cleared, not replied to"
+                        cleared -> "Blocked and cleared without replying"
+                        else -> "Already unsubscribed - cleared without replying"
+                    },
+                    timestamp = System.currentTimeMillis(),
+                    blocked = cleared,
+                )
+            } else if (snapshot.dryRun) {
                 // Exercise every step except the one that actually texts a stranger.
                 SendOutcome(
                     address = plan.address,
@@ -128,12 +152,16 @@ class BulkReplyService : Service() {
                     )
                 ) {
                     is SendResult.Success -> {
-                        applyPostSend(repository, snapshot, plan.messageIds)
+                        // Nothing to record here: SmsSender files the reply into the Sent box
+                        // on confirmation, and that row is what later marks this sender as
+                        // already opted out.
+                        val blocked = applyPostSend(repository, blockedNumbers, plan)
                         SendOutcome(
                             address = plan.address,
                             keyword = plan.keyword,
                             status = SendStatus.SENT,
                             timestamp = System.currentTimeMillis(),
+                            blocked = blocked,
                         )
                     }
 
@@ -161,8 +189,10 @@ class BulkReplyService : Service() {
             store.save(snapshot.copy(outcomes = outcomes.toList()))
             publish(outcomes)
 
+            // Pacing exists to protect the radio and the carrier. A cleared thread touched
+            // neither, so waiting after one would just make a long batch longer for no reason.
             val isLast = index == remaining.lastIndex
-            if (!isLast) {
+            if (!isLast && plan.sendReply) {
                 val wait = SendPacing.delayMillis(snapshot.delaySeconds, snapshot.jitterPercent)
                 BulkReplyController.update {
                     it.copy(
@@ -181,19 +211,33 @@ class BulkReplyService : Service() {
         store.clear()
     }
 
-    /** Marking read (or deleting) only happens once the radio has confirmed the reply went out. */
+    /**
+     * Disposes of a sender's thread once handled, per what the user chose when selecting it.
+     *
+     * Blocking goes first: if it succeeds the number is dealt with regardless of what becomes of
+     * the messages, and if it fails the cleanup should still happen. Only reached after the radio
+     * has confirmed a reply went out, or for a thread that was never going to be replied to.
+     *
+     * @return true if the number was blocked.
+     */
     private suspend fun applyPostSend(
         repository: SmsRepository,
-        snapshot: BatchSnapshot,
-        messageIds: List<Long>,
-    ) {
+        blockedNumbers: BlockedNumbers,
+        plan: ReplyPlan,
+    ): Boolean {
+        val blocked = if (plan.block) {
+            runCatching { blockedNumbers.block(plan.address) }
+                .onFailure { Log.e(TAG, "Blocking ${plan.address} failed", it) }
+                .getOrDefault(false)
+        } else {
+            false
+        }
+
         runCatching {
-            when {
-                snapshot.deleteAfterSend -> repository.delete(messageIds)
-                snapshot.markReadAfterSend -> repository.markRead(messageIds)
-                else -> 0
-            }
+            if (plan.delete) repository.delete(plan.messageIds) else repository.markRead(plan.messageIds)
         }.onFailure { Log.e(TAG, "Post-send cleanup failed", it) }
+
+        return blocked
     }
 
     /**

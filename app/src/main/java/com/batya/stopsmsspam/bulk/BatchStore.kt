@@ -16,8 +16,6 @@ data class BatchSnapshot(
     val delaySeconds: Int = SendPacing.DEFAULT_DELAY_SECONDS,
     val jitterPercent: Int = SendPacing.DEFAULT_JITTER_PERCENT,
     val dryRun: Boolean = true,
-    val markReadAfterSend: Boolean = true,
-    val deleteAfterSend: Boolean = false,
 ) {
     /** Plans are worked through in order, so the tail past the recorded outcomes is what is left. */
     val remaining: List<ReplyPlan> get() = plans.drop(outcomes.size)
@@ -52,8 +50,6 @@ class BatchStore(context: Context) {
         put("delaySeconds", snapshot.delaySeconds)
         put("jitterPercent", snapshot.jitterPercent)
         put("dryRun", snapshot.dryRun)
-        put("markReadAfterSend", snapshot.markReadAfterSend)
-        put("deleteAfterSend", snapshot.deleteAfterSend)
         put(
             "plans",
             JSONArray().apply {
@@ -63,6 +59,9 @@ class BatchStore(context: Context) {
                             put("address", plan.address)
                             put("keyword", plan.keyword)
                             put("subscriptionId", plan.subscriptionId)
+                            put("sendReply", plan.sendReply)
+                            put("delete", plan.delete)
+                            put("block", plan.block)
                             put("messageIds", JSONArray().apply { plan.messageIds.forEach { put(it) } })
                         },
                     )
@@ -96,6 +95,9 @@ class BatchStore(context: Context) {
                 address = obj.getString("address"),
                 keyword = obj.getString("keyword"),
                 subscriptionId = obj.optInt("subscriptionId", -1),
+                sendReply = obj.optBoolean("sendReply", true),
+                delete = obj.optBoolean("delete", true),
+                block = obj.optBoolean("block", false),
                 messageIds = (0 until idsJson.length()).map { idsJson.getLong(it) },
             )
         }
@@ -119,8 +121,6 @@ class BatchStore(context: Context) {
             delaySeconds = json.optInt("delaySeconds", SendPacing.DEFAULT_DELAY_SECONDS),
             jitterPercent = json.optInt("jitterPercent", SendPacing.DEFAULT_JITTER_PERCENT),
             dryRun = json.optBoolean("dryRun", true),
-            markReadAfterSend = json.optBoolean("markReadAfterSend", true),
-            deleteAfterSend = json.optBoolean("deleteAfterSend", false),
         )
     }
 

@@ -27,7 +27,10 @@ class SmsRepository(private val context: Context) {
      * Every unread inbox message, collapsed to one row per sender so a number that texted eight
      * times receives exactly one opt-out reply.
      */
-    suspend fun loadUnreadSenders(fallbackKeyword: String): List<SpamSender> =
+    suspend fun loadUnreadSenders(
+        fallbackKeyword: String,
+        optedOut: Map<String, OptOutStatus> = emptyMap(),
+    ): List<SpamSender> =
         withContext(Dispatchers.IO) {
             if (!canReadSms()) return@withContext emptyList()
 
@@ -70,8 +73,81 @@ class SmsRepository(private val context: Context) {
                 }
             }
 
-            SenderGrouping.group(messages, fallbackKeyword)
+            SenderGrouping.group(messages, fallbackKeyword, optedOut)
         }
+
+    /**
+     * Works out, from the message history alone, which senders have already been told to stop
+     * and which of those said so back.
+     *
+     * Two passes over the provider:
+     *  1. the Sent box, for outgoing messages that *are* an opt-out keyword - this is what makes
+     *     an opt-out sent from the user's normal messaging app count exactly as much as one this
+     *     app sent;
+     *  2. the inbox from the earliest of those onwards, for the sender's acknowledgement.
+     *
+     * The second query is bounded by the first: with no opt-outs sent there is nothing to look
+     * for, and otherwise only messages newer than the earliest opt-out can possibly confirm one.
+     */
+    suspend fun loadOptOutStatus(): Map<String, OptOutStatus> = withContext(Dispatchers.IO) {
+        if (!canReadSms()) return@withContext emptyMap()
+
+        val sent = context.contentResolver.query(
+            Telephony.Sms.Sent.CONTENT_URI,
+            arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),
+            null,
+            null,
+            "${Telephony.Sms.DATE} ASC",
+        ) ?: return@withContext emptyMap()
+
+        // Latest opt-out wins: if a sender was told to stop twice, the second attempt is the one
+        // a confirmation has to follow.
+        val optOuts = LinkedHashMap<String, OptOutStatus>()
+        sent.use {
+            val addressIdx = it.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
+            val bodyIdx = it.getColumnIndexOrThrow(Telephony.Sms.BODY)
+            val dateIdx = it.getColumnIndexOrThrow(Telephony.Sms.DATE)
+            while (it.moveToNext()) {
+                val body = it.getString(bodyIdx).orEmpty()
+                if (!OptOutKeywordDetector.isOptOutReply(body)) continue
+                val key = PhoneAddress.normalize(it.getString(addressIdx) ?: continue)
+                if (key.isEmpty()) continue
+                optOuts[key] = OptOutStatus(
+                    keyword = body.trim().uppercase(),
+                    sentAtMillis = it.getLong(dateIdx),
+                )
+            }
+        }
+        if (optOuts.isEmpty()) return@withContext emptyMap()
+
+        val earliest = optOuts.values.minOf { it.sentAtMillis }
+        val replies = context.contentResolver.query(
+            Telephony.Sms.Inbox.CONTENT_URI,
+            arrayOf(Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE),
+            "${Telephony.Sms.DATE} > ?",
+            arrayOf(earliest.toString()),
+            "${Telephony.Sms.DATE} ASC",
+        ) ?: return@withContext optOuts
+
+        replies.use {
+            val addressIdx = it.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
+            val bodyIdx = it.getColumnIndexOrThrow(Telephony.Sms.BODY)
+            val dateIdx = it.getColumnIndexOrThrow(Telephony.Sms.DATE)
+            while (it.moveToNext()) {
+                val key = PhoneAddress.normalize(it.getString(addressIdx) ?: continue)
+                val pending = optOuts[key] ?: continue
+                if (pending.isConfirmed) continue
+
+                val date = it.getLong(dateIdx)
+                // Must postdate the opt-out: otherwise a solicitation could confirm itself.
+                if (date <= pending.sentAtMillis) continue
+                if (!OptOutConfirmationDetector.isConfirmation(it.getString(bodyIdx).orEmpty())) continue
+
+                optOuts[key] = pending.copy(confirmedAtMillis = date)
+            }
+        }
+        optOuts
+    }
 
     /**
      * Stores a message the system handed us via SMS_DELIVER. Only the default SMS app may do
