@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Telephony
 import android.util.Log
+import com.batya.stopsmsspam.data.OptOutConfirmationDetector
+import com.batya.stopsmsspam.data.SenderMemory
 import com.batya.stopsmsspam.data.SmsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +39,8 @@ class SmsDeliverReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         scope.launch {
             try {
+                if (dropAsHandledResponse(appContext, address, body)) return@launch
+
                 SmsRepository(appContext).insertIncoming(
                     address = address,
                     body = body,
@@ -50,6 +54,35 @@ class SmsDeliverReceiver : BroadcastReceiver() {
                 pendingResult.finish()
             }
         }
+    }
+
+    /**
+     * Drops a reply from a sender whose thread the user deleted, rather than storing a message
+     * they would only have to delete again.
+     *
+     * Deliberately limited to the acknowledgement. Dropping *everything* from the number would
+     * also swallow a later marketing message - and that message is the whole basis of the STOP
+     * IGNORED state, so the escalation this method takes care to preserve would become
+     * unreachable by the same stroke.
+     *
+     * The confirmation is recorded before it is discarded: the app otherwise learns that a
+     * sender acknowledged an opt-out by reading this very message.
+     *
+     * @return true if the message was handled and must not be stored.
+     */
+    private suspend fun dropAsHandledResponse(
+        context: Context,
+        address: String,
+        body: String,
+    ): Boolean {
+        if (!OptOutConfirmationDetector.isConfirmation(body)) return false
+
+        val memory = SenderMemory(context)
+        if (!memory.shouldAutoDeleteResponses(address)) return false
+
+        memory.rememberConfirmation(address, System.currentTimeMillis())
+        Log.i(TAG, "Dropped opt-out confirmation from a deleted thread")
+        return true
     }
 
     private companion object {

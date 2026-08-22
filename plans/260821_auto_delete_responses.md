@@ -24,31 +24,48 @@ never appears.
 So "delete the response" and "keep deriving everything from the provider" cannot both hold in
 full. Something must give, and which one is a judgement about the app, not a detail.
 
-## Open question — the fork
+## Resolution: record it, then delete
 
-**A. Record the confirmation before deleting it.** A small persisted memo of
-`{address → confirmedAt}`, written at the moment the evidence is destroyed and consulted when
-the provider no longer has it. All current behaviour is preserved exactly, including the
-escalation. The cost: it reintroduces a side record, which was deliberately removed one change
-ago — though this one is narrower, storing only facts whose evidence the user asked to delete
-rather than duplicating anything still derivable.
+Option A. A small `SenderMemory` store holds two facts per sender — whether its replies should be
+dropped, and when it confirmed. It is written at the moment the evidence is destroyed and folded
+back in on load by `RememberedConfirmations.applyTo`.
 
-**B. Widen what counts as a violation.** Drop the requirement that a violation follow a
-*confirmed* opt-out: any sender that was sent an opt-out and texted again afterwards is
-escalated. No storage at all, and the provider stays the only source of truth. The cost: a
-sender that never acknowledged and simply kept texting would now be labelled as having ignored
-its opt-out — which it arguably did, though the current wording ("agreed to stop and then
-messaged you anyway") would have to change, since no agreement was made.
+This is not a second source of truth competing with the provider. It answers only what the
+provider **cannot**, because the user asked for those messages to be deleted. Everything still
+derivable is still derived: "did we ask?" continues to come from the Sent box, which is never
+deleted from, so only the answering half needed remembering at all.
 
-Not guessing between these: the previous change deliberately chose deriving over recording, and
-the previous change also deliberately kept *asked* and *answered* apart.
+## The refinement that fell out of it
 
-## Approach, once the fork is settled
+**Only the acknowledgement is dropped, not everything from the number.** Registering the sender
+and discarding all its future messages would also swallow a later marketing message — and that
+message is the entire basis of the STOP IGNORED state, so the escalation this whole design goes
+out of its way to preserve would have been made unreachable by the same stroke. The request's own
+wording, "when a response is returned", already scopes it that way.
 
-- Track numbers whose thread was deleted, added when a batch's plan has `delete = true`.
-- `SmsDeliverReceiver` checks that list on arrival and drops the message instead of persisting
-  it — cheaper and tidier than writing a row and deleting it a moment later.
-- Whatever the fork decides has to happen *before* the drop, since after it the evidence is gone.
+A remembered confirmation also has to postdate the opt-out it answers, or a sender told to stop a
+second time would look as though it had already replied to the second request. That rule is a
+pure function with its own tests, because it is the kind of thing that is easy to get subtly
+wrong and impossible to notice.
+
+A thread deleted from the row's own **Delete** button registers the sender too — deleting a
+thread means the same thing however it was done.
+
+## Verified
+
+61 unit tests (up from 57), four of them on the merge rule: a deleted confirmation is restored,
+one older than the opt-out is ignored, one still in the provider is left alone, and senders with
+nothing remembered are untouched. `lintDebug` and `assembleDebug` clean.
+
+End to end on the Android 12 emulator, in the order that matters:
+
+1. Real batch to `71717` with delete on → `STOP` in the Sent box, thread gone, memory shows
+   `{"71717":{"ad":true,"c":null}}`.
+2. Confirmation arrives → **0 inbox rows**, log line "Dropped opt-out confirmation from a deleted
+   thread", and `"c"` filled in with a timestamp.
+3. A later marketing message from the same number → **does** arrive, 1 inbox row. Not swallowed.
+4. Reopening the app shows it as **STOP IGNORED** with the Block button — the escalation intact
+   from a confirmation that no longer exists anywhere in the provider.
 
 ## Out of scope
 

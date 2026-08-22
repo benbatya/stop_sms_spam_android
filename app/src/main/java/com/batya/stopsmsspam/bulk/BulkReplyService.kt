@@ -8,6 +8,7 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.ServiceCompat
 import com.batya.stopsmsspam.data.BlockedNumbers
+import com.batya.stopsmsspam.data.SenderMemory
 import com.batya.stopsmsspam.data.SmsRepository
 import com.batya.stopsmsspam.data.model.BatchProgress
 import com.batya.stopsmsspam.data.model.ReplyPlan
@@ -234,7 +235,14 @@ class BulkReplyService : Service() {
         }
 
         runCatching {
-            if (plan.delete) repository.delete(plan.messageIds) else repository.markRead(plan.messageIds)
+            if (plan.delete) {
+                repository.delete(plan.messageIds)
+                // Deleting the thread implies not wanting its reply either, so the sender's
+                // acknowledgement is dropped on arrival instead of landing back in the inbox.
+                SenderMemory(this).markAutoDeleteResponses(plan.address)
+            } else {
+                repository.markRead(plan.messageIds)
+            }
         }.onFailure { Log.e(TAG, "Post-send cleanup failed", it) }
 
         return blocked
