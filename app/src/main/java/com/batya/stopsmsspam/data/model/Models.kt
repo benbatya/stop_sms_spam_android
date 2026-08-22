@@ -71,8 +71,13 @@ data class SpamSender(
 ) {
     val messageCount: Int get() = messages.size
 
+    val mmsCount: Int get() = messages.count { it.source == MessageSource.MMS }
+
     /** True when any of this sender's messages arrived as MMS. */
-    val hasMms: Boolean get() = messages.any { it.source == MessageSource.MMS }
+    val hasMms: Boolean get() = mmsCount > 0
+
+    /** True when every one of them did, which is the common case for a picture-message blast. */
+    val isAllMms: Boolean get() = hasMms && mmsCount == messages.size
 
     /** The sender acknowledged the opt-out: asked *and* answered. */
     val isUnsubscribed: Boolean get() = optedOut?.isConfirmed == true

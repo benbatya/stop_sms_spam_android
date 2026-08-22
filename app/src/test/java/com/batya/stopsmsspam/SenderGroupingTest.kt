@@ -247,6 +247,43 @@ class SenderGroupingTest {
         assertFalse(SenderGrouping.group(listOf(message(1, "22395")), "STOP").single().hasMms)
     }
 
+    // The badge says "MMS" or "SMS + MMS" off this flag alone, so getting it backwards would
+    // mislabel every mixed thread in the list.
+    @Test
+    fun `a mixed thread is not all-MMS`() {
+        val messages = listOf(
+            message(1, "8022160869", date = 300L, source = MessageSource.MMS),
+            message(2, "8022160869", date = 200L),
+        )
+
+        val sender = SenderGrouping.group(messages, "STOP").single()
+
+        assertTrue(sender.hasMms)
+        assertFalse(sender.isAllMms)
+        assertEquals(1, sender.mmsCount)
+    }
+
+    @Test
+    fun `a thread of nothing but MMS is all-MMS`() {
+        val messages = listOf(
+            message(1, "8022160869", date = 300L, source = MessageSource.MMS),
+            message(2, "8022160869", date = 200L, source = MessageSource.MMS),
+        )
+
+        val sender = SenderGrouping.group(messages, "STOP").single()
+
+        assertTrue(sender.isAllMms)
+        assertEquals(2, sender.mmsCount)
+    }
+
+    @Test
+    fun `an all-SMS sender is not all-MMS`() {
+        val sender = SenderGrouping.group(listOf(message(1, "22395")), "STOP").single()
+
+        assertFalse(sender.isAllMms)
+        assertEquals(0, sender.mmsCount)
+    }
+
     @Test
     fun `skips messages with an unusable address`() {
         val messages = listOf(message(1, "   "), message(2, "22395"))

@@ -1,6 +1,7 @@
 package com.batya.stopsmsspam.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
@@ -166,8 +168,16 @@ private fun SenderRow(
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(sender.displayAddress, style = MaterialTheme.typography.titleSmall)
+                    Row(
+                        Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(sender.displayAddress, style = MaterialTheme.typography.titleSmall)
+                        if (sender.hasMms) MmsBadge(sender.isAllMms)
+                    }
                     Text(
                         DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
                             .format(Date(sender.latestDate)),
@@ -212,6 +222,32 @@ private fun SenderRow(
             }
         }
     }
+}
+
+/**
+ * Marks a sender whose unread messages are not plain SMS.
+ *
+ * Worth distinguishing because an MMS row does not behave like the SMS ones around it: the
+ * preview is whatever text the message carried, so a picture-only blast shows up near-empty and
+ * keyword detection has less to work with. The reply still goes out as an ordinary SMS.
+ *
+ * Outlined rather than filled: the row's own background changes on selection, and a tonal badge
+ * would disappear into the selected colour.
+ */
+@Composable
+private fun MmsBadge(allMms: Boolean) {
+    Text(
+        if (allMms) "MMS" else "SMS + MMS",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline,
+                shape = RoundedCornerShape(4.dp),
+            )
+            .padding(horizontal = 5.dp, vertical = 1.dp),
+    )
 }
 
 /**

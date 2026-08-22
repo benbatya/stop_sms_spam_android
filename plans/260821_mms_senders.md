@@ -61,6 +61,24 @@ about. `8022160869` is `read=1` — it was already read in the messaging app. Th
 *unread* MMS, exactly as it does for SMS; it does not change what "unread" means. The 914 that
 do appear are the point, not that one.
 
+## The row says which kind it is
+
+An MMS row does not behave like the SMS rows around it, so it is marked: a small outlined badge
+next to the address reading **MMS**, or **SMS + MMS** when the sender has sent both.
+
+Worth distinguishing because the difference shows up in the row's own content. The preview is
+whatever text the MMS carried, so a picture-only blast renders near-empty and looks like a bug
+rather than a message with no words in it; and keyword detection has less to work with, which is
+why some MMS senders fall to the assumed `STOP`. The reply still goes out as an ordinary SMS
+either way.
+
+Outlined rather than filled: the row's background changes to `secondaryContainer` on selection,
+and a tonal badge would disappear into it exactly when the user is looking hardest.
+
+The mixed case is called out separately because `hasMms` alone would label a thread of nine SMS
+and one MMS as "MMS". `isAllMms` and `mmsCount` carry that distinction and have their own tests -
+a badge that lies about what is in the thread is worse than no badge.
+
 ## The limitation this does not fix
 
 While **this app holds the SMS role**, incoming MMS are not written to the provider at all —
