@@ -2,6 +2,8 @@ package com.batya.stopsmsspam.bulk
 
 import android.content.Context
 import android.util.Log
+import com.batya.stopsmsspam.data.model.MessageRef
+import com.batya.stopsmsspam.data.model.MessageSource
 import com.batya.stopsmsspam.data.model.ReplyPlan
 import com.batya.stopsmsspam.data.model.SendOutcome
 import com.batya.stopsmsspam.data.model.SendStatus
@@ -62,7 +64,16 @@ class BatchStore(context: Context) {
                             put("sendReply", plan.sendReply)
                             put("delete", plan.delete)
                             put("block", plan.block)
-                            put("messageIds", JSONArray().apply { plan.messageIds.forEach { put(it) } })
+                            // Source travels with each id: a resumed batch must not delete an
+                            // SMS row that happens to share an id with the MMS it meant.
+                            put(
+                                "messages",
+                                JSONArray().apply {
+                                    plan.messages.forEach {
+                                        put(JSONObject().put("id", it.id).put("src", it.source.name))
+                                    }
+                                },
+                            )
                         },
                     )
                 }
@@ -90,7 +101,7 @@ class BatchStore(context: Context) {
         val plansJson = json.optJSONArray("plans") ?: JSONArray()
         val plans = (0 until plansJson.length()).map { i ->
             val obj = plansJson.getJSONObject(i)
-            val idsJson = obj.optJSONArray("messageIds") ?: JSONArray()
+            val refsJson = obj.optJSONArray("messages") ?: JSONArray()
             ReplyPlan(
                 address = obj.getString("address"),
                 keyword = obj.getString("keyword"),
@@ -98,7 +109,14 @@ class BatchStore(context: Context) {
                 sendReply = obj.optBoolean("sendReply", true),
                 delete = obj.optBoolean("delete", true),
                 block = obj.optBoolean("block", false),
-                messageIds = (0 until idsJson.length()).map { idsJson.getLong(it) },
+                messages = (0 until refsJson.length()).map {
+                    val ref = refsJson.getJSONObject(it)
+                    MessageRef(
+                        id = ref.getLong("id"),
+                        source = runCatching { MessageSource.valueOf(ref.getString("src")) }
+                            .getOrDefault(MessageSource.SMS),
+                    )
+                },
             )
         }
 

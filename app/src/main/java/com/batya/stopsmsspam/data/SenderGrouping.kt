@@ -1,5 +1,6 @@
 package com.batya.stopsmsspam.data
 
+import com.batya.stopsmsspam.data.model.MessageRef
 import com.batya.stopsmsspam.data.model.SpamMessage
 import com.batya.stopsmsspam.data.model.SpamSender
 
@@ -47,14 +48,14 @@ object SenderGrouping {
                     subscriptionId = message.subscriptionId,
                 )
             }
-            builder.messageIds += message.id
+            builder.messages += message.ref
         }
 
         return builders.values.map { builder ->
             SpamSender(
                 normalizedAddress = builder.normalizedAddress,
                 displayAddress = builder.displayAddress,
-                messageIds = builder.messageIds.toList(),
+                messages = builder.messages.toList(),
                 latestBody = builder.latestBody,
                 latestDate = builder.latestDate,
                 subscriptionId = builder.subscriptionId,
@@ -71,6 +72,6 @@ object SenderGrouping {
         val latestBody: String,
         val latestDate: Long,
         val subscriptionId: Int,
-        val messageIds: MutableList<Long> = mutableListOf(),
+        val messages: MutableList<MessageRef> = mutableListOf(),
     )
 }

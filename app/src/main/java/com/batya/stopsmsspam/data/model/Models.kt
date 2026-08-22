@@ -2,15 +2,28 @@ package com.batya.stopsmsspam.data.model
 
 import com.batya.stopsmsspam.data.OptOutStatus
 
-/** A single unread SMS as stored in the system Telephony provider. */
+/**
+ * Which provider table a message lives in. They are separate stores with separate ids, so an id
+ * alone cannot be marked read or deleted - it has to say where it came from.
+ */
+enum class MessageSource { SMS, MMS }
+
+/** Points at one message, unambiguously, across both tables. */
+data class MessageRef(val id: Long, val source: MessageSource)
+
+/** A single unread message as stored in the system Telephony provider. */
 data class SpamMessage(
     val id: Long,
     val address: String,
     val body: String,
+    /** Milliseconds. MMS stores seconds, so that reader multiplies before constructing this. */
     val date: Long,
     val threadId: Long,
     val subscriptionId: Int,
-)
+    val source: MessageSource = MessageSource.SMS,
+) {
+    val ref: MessageRef get() = MessageRef(id, source)
+}
 
 /** How sure we are that [DetectedKeyword.keyword] is really what this sender wants back. */
 enum class KeywordConfidence {
@@ -38,7 +51,7 @@ data class SpamSender(
     val normalizedAddress: String,
     /** The address exactly as the provider stored it. This is what we reply to. */
     val displayAddress: String,
-    val messageIds: List<Long>,
+    val messages: List<MessageRef>,
     val latestBody: String,
     val latestDate: Long,
     val subscriptionId: Int,
@@ -56,7 +69,10 @@ data class SpamSender(
      */
     val optOutViolatedAt: Long? = null,
 ) {
-    val messageCount: Int get() = messageIds.size
+    val messageCount: Int get() = messages.size
+
+    /** True when any of this sender's messages arrived as MMS. */
+    val hasMms: Boolean get() = messages.any { it.source == MessageSource.MMS }
 
     /** The sender acknowledged the opt-out: asked *and* answered. */
     val isUnsubscribed: Boolean get() = optedOut?.isConfirmed == true
@@ -90,7 +106,7 @@ data class SpamSender(
 data class ReplyPlan(
     val address: String,
     val keyword: String,
-    val messageIds: List<Long>,
+    val messages: List<MessageRef>,
     val subscriptionId: Int,
     /**
      * False for a sender already opted out of: the thread is still cleaned up, but no message is

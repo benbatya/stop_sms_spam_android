@@ -45,6 +45,22 @@ So four bulk queries, no per-message work.
 - Group MMS threads with more than one recipient are skipped: a group thread has no single spam
   sender, and replying STOP into one would text strangers.
 
+## What the real inbox showed
+
+Replicating the four queries against the phone, 1,183 unread MMS resolve to **1,104 senders**
+across 572 distinct addresses — then two things turned up that the emulator never would have.
+
+**RCS and email-gateway participants come through the same table**, as
+`…@rcs.google.com`. They were three of the five noisiest "senders", 142 messages between them.
+They are excluded: an opt-out texted to one would fail, a number that is not a number cannot be
+blocked, and listing them would fill the inbox with rows nothing in this app can act on. After
+excluding them and group threads: **914 actionable unread MMS from 556 senders.**
+
+**The message that prompted this change still will not appear**, and that is worth being plain
+about. `8022160869` is `read=1` — it was already read in the messaging app. This surfaces
+*unread* MMS, exactly as it does for SMS; it does not change what "unread" means. The 914 that
+do appear are the point, not that one.
+
 ## The limitation this does not fix
 
 While **this app holds the SMS role**, incoming MMS are not written to the provider at all —

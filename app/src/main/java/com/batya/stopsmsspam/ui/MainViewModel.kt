@@ -181,7 +181,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** Clears an already-unsubscribed sender's messages from the unread list. */
     fun markRead(sender: SpamSender) {
         viewModelScope.launch {
-            repository.markRead(sender.messageIds)
+            repository.markRead(sender.messages)
             refreshInbox()
         }
     }
@@ -189,7 +189,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** Deletes an already-unsubscribed sender's messages outright. */
     fun deleteMessages(sender: SpamSender) {
         viewModelScope.launch {
-            repository.delete(sender.messageIds)
+            repository.delete(sender.messages)
             // Same rule as a batch delete: having deleted the thread, its reply is not wanted.
             senderMemory.markAutoDeleteResponses(sender.displayAddress)
             refreshInbox()
@@ -198,8 +198,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun markAllUnsubscribedRead() {
         viewModelScope.launch {
-            val ids = _state.value.senders.filter { it.isUnsubscribed }.flatMap { it.messageIds }
-            if (ids.isNotEmpty()) repository.markRead(ids)
+            val refs = _state.value.senders.filter { it.isUnsubscribed }.flatMap { it.messages }
+            if (refs.isNotEmpty()) repository.markRead(refs)
             refreshInbox()
         }
     }
@@ -214,7 +214,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val blocked = blockedNumbers.block(sender.displayAddress)
             _state.update { it.copy(lastBlockFailed = if (blocked) null else sender.displayAddress) }
-            if (blocked) repository.markRead(sender.messageIds)
+            if (blocked) repository.markRead(sender.messages)
             refreshInbox()
         }
     }
@@ -285,7 +285,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             ReplyPlan(
                 address = sender.displayAddress,
                 keyword = current.keywordFor(sender),
-                messageIds = sender.messageIds,
+                messages = sender.messages,
                 subscriptionId = sender.subscriptionId,
                 // Already opted out of: the thread still gets cleaned up, but sending a second
                 // opt-out would be noise - and to a sender that ignored the first, useless.
