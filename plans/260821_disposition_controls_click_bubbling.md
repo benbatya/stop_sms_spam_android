@@ -32,7 +32,23 @@ ripple inside it would suggest a separate button.
 - The disabled `AssistChip` keyword badge. A tap there falls through to the card and toggles
   selection, which is the same thing tapping the row does — harmless, and arguably wanted.
 
-## Verify
+## Verified
 
-Reproduce first, then fix: select a sender, tap the *label text* rather than the checkbox, and
-confirm the row stays selected and the setting flips.
+Reproduced before fixing, on the Android 12 emulator: with `15557654321` selected, a tap on the
+words "Delete these messages" **deselected the sender** — checkbox cleared, controls gone. The
+setting it was aimed at did not change.
+
+After the fix, the same tap at the same coordinates leaves the row selected and flips the label
+to "Keep them, just mark read". Four label taps across both controls produced zero accidental
+deselections, and the defaults were toggled back to confirm both directions.
+
+One incidental finding: because each toggle row is `fillMaxWidth`, a tap well to the right of a
+label still lands inside that row and toggles it. That is the intended hit target rather than a
+gap, so the container's swallow only has the vertical space between rows left to catch.
+
+## Note on the shape of the bug
+
+Worth recording because it generalises: a parent that makes its whole surface clickable turns
+every non-interactive child into a hazard. The severity was inverted from what a stray tap
+usually costs — a near-miss did not merely fail, it undid the selection *and* hid the controls
+being aimed at, so the recovery cost more than the original action.

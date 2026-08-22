@@ -24,6 +24,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -227,21 +230,61 @@ private fun DispositionControls(
     onSetDelete: (Boolean) -> Unit,
     onSetBlock: (Boolean) -> Unit,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(checked = deletes, onCheckedChange = onSetDelete)
-        Text(
-            if (deletes) "Delete these messages" else "Keep them, just mark read",
-            style = MaterialTheme.typography.labelMedium,
+    // Everything here sits inside the row's own clickable card, so any tap these controls do not
+    // handle reaches it and toggles the selection - hiding the controls the user was aiming at.
+    // The container swallows what the rows below do not: their padding, and the gap between them.
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .noRippleClickable { },
+    ) {
+        DispositionToggle(
+            checked = deletes,
+            label = if (deletes) "Delete these messages" else "Keep them, just mark read",
+            onToggle = onSetDelete,
         )
-    }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(checked = blocks, onCheckedChange = onSetBlock)
-        Text(
-            "Block this number",
-            style = MaterialTheme.typography.labelMedium,
+        DispositionToggle(
+            checked = blocks,
+            label = "Block this number",
+            onToggle = onSetBlock,
             color = if (blocks) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
         )
     }
+}
+
+/**
+ * One disposition checkbox and its label, clickable as a unit.
+ *
+ * Making the whole row the hit target does two things at once: a tap on the words does what the
+ * user plainly meant instead of nothing, and it consumes the event that would otherwise fall
+ * through to the card and deselect the sender.
+ */
+@Composable
+private fun DispositionToggle(
+    checked: Boolean,
+    label: String,
+    onToggle: (Boolean) -> Unit,
+    color: Color = Color.Unspecified,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .noRippleClickable { onToggle(!checked) },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = checked, onCheckedChange = onToggle)
+        Text(label, style = MaterialTheme.typography.labelMedium, color = color)
+    }
+}
+
+/**
+ * Clickable without a ripple. These live inside a card that already shows its own press
+ * feedback; a second ripple within it would read as a separate button.
+ */
+@Composable
+private fun Modifier.noRippleClickable(onClick: () -> Unit): Modifier {
+    val interactionSource = remember { MutableInteractionSource() }
+    return clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
 }
 
 /**
