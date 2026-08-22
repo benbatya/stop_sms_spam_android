@@ -81,7 +81,9 @@ class SmsDeliverReceiver : BroadcastReceiver() {
         if (!memory.shouldAutoDeleteResponses(address)) return false
 
         memory.rememberConfirmation(address, System.currentTimeMillis())
-        Log.i(TAG, "Dropped opt-out confirmation from a deleted thread")
+        // Cleared from the inbox, but not hidden: the user still wants to know the STOP landed.
+        Notifications.notifyOptOutConfirmed(context, address, body)
+        Log.i(TAG, "Cleared opt-out confirmation from a deleted thread, and notified")
         return true
     }
 

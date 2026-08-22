@@ -23,10 +23,12 @@ import kotlin.math.abs
 object Notifications {
 
     const val CHANNEL_INCOMING = "incoming_sms"
+    const val CHANNEL_OPT_OUT_CONFIRMED = "opt_out_confirmed"
     const val CHANNEL_BATCH = "batch_progress"
 
     const val BATCH_NOTIFICATION_ID = 1001
     private const val INCOMING_ID_BASE = 2000
+    private const val CONFIRMED_ID_BASE = 3000
 
     fun createChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
@@ -38,6 +40,19 @@ object Notifications {
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply {
                 description = "Texts that arrive while this app is your default SMS app."
+            },
+        )
+
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_OPT_OUT_CONFIRMED,
+                "Opt-out confirmations",
+                // Deliberately below the incoming-message channel. This reports that something
+                // the user asked for has finished, not that someone is trying to reach them, and
+                // it is separable so it can be silenced without silencing real texts.
+                NotificationManager.IMPORTANCE_DEFAULT,
+            ).apply {
+                description = "When a sender confirms you have been unsubscribed."
             },
         )
 
@@ -65,6 +80,31 @@ object Notifications {
             .setContentIntent(openAppIntent(context))
             .build()
         notifySafely(context, INCOMING_ID_BASE + abs(address.hashCode() % 1000), notification)
+    }
+
+    /**
+     * Reports that a sender acknowledged an opt-out, for the case where the message carrying
+     * that acknowledgement was deleted on arrival.
+     *
+     * Dropping it silently would mean the user never learns the STOP worked - the one piece of
+     * good news the whole exercise produces. So the message is still cleared from the inbox, and
+     * this says what it said.
+     */
+    fun notifyOptOutConfirmed(context: Context, address: String, body: String) {
+        val notification = NotificationCompat.Builder(context, CHANNEL_OPT_OUT_CONFIRMED)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Unsubscribed from $address")
+            .setContentText(body)
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .bigText("$body\n\nThe message was cleared - you deleted this thread.")
+            )
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .setContentIntent(openAppIntent(context))
+            .build()
+        notifySafely(context, CONFIRMED_ID_BASE + abs(address.hashCode() % 1000), notification)
     }
 
     /**

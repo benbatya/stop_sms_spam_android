@@ -51,6 +51,20 @@ wrong and impossible to notice.
 A thread deleted from the row's own **Delete** button registers the sender too — deleting a
 thread means the same thing however it was done.
 
+## Cleared is not the same as hidden
+
+The first cut dropped the confirmation with no trace at all — and that was wrong for a reason the
+emulator could not show: it took away the one piece of good news the whole exercise produces.
+The user asked not to have to *delete* the reply, not to be kept from knowing the STOP worked.
+
+So the message is still cleared from the inbox, and a notification says what it said:
+**"Unsubscribed from 64646"** with the sender's own wording.
+
+It gets its own channel, `opt_out_confirmed`, at DEFAULT importance rather than the HIGH used for
+incoming messages. This reports that something the user asked for has finished, not that someone
+is trying to reach them — and a separate channel means it can be silenced without silencing real
+texts.
+
 ## Verified
 
 61 unit tests (up from 57), four of them on the merge rule: a deleted confirmation is restored,
@@ -61,8 +75,9 @@ End to end on the Android 12 emulator, in the order that matters:
 
 1. Real batch to `71717` with delete on → `STOP` in the Sent box, thread gone, memory shows
    `{"71717":{"ad":true,"c":null}}`.
-2. Confirmation arrives → **0 inbox rows**, log line "Dropped opt-out confirmation from a deleted
-   thread", and `"c"` filled in with a timestamp.
+2. Confirmation arrives → **0 inbox rows**, `"c"` filled in with a timestamp, and a notification
+   posted on the `opt_out_confirmed` channel titled "Unsubscribed from 64646" — informed without
+   anything left to clean up.
 3. A later marketing message from the same number → **does** arrive, 1 inbox row. Not swallowed.
 4. Reopening the app shows it as **STOP IGNORED** with the Block button — the escalation intact
    from a confirmation that no longer exists anywhere in the provider.
