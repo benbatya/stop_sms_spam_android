@@ -24,6 +24,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -195,17 +198,17 @@ private fun SenderRow(
                     UnsubscribedRow(sender, onMarkRead, onDelete, onBlock)
                 }
 
-                // The disposition only matters once the sender is actually selected, and showing
-                // it on every row would bury the message under controls.
-                if (selected) {
-                    DispositionControls(
-                        sender = sender,
-                        deletes = deletes,
-                        blocks = blocks,
-                        onSetDelete = onSetDelete,
-                        onSetBlock = onSetBlock,
-                    )
-                }
+                // Always shown, disabled until the sender is selected. Hiding them meant the
+                // row changed height on every selection and, more to the point, that the
+                // defaults - notably a pre-ticked "block" on a sender that ignored its opt-out -
+                // were invisible until you had already committed to acting on it.
+                DispositionControls(
+                    enabled = selected,
+                    deletes = deletes,
+                    blocks = blocks,
+                    onSetDelete = onSetDelete,
+                    onSetBlock = onSetBlock,
+                )
             }
         }
     }
@@ -221,27 +224,85 @@ private fun SenderRow(
  */
 @Composable
 private fun DispositionControls(
-    sender: SpamSender,
+    enabled: Boolean,
     deletes: Boolean,
     blocks: Boolean,
     onSetDelete: (Boolean) -> Unit,
     onSetBlock: (Boolean) -> Unit,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(checked = deletes, onCheckedChange = onSetDelete)
-        Text(
-            if (deletes) "Delete these messages" else "Keep them, just mark read",
-            style = MaterialTheme.typography.labelMedium,
+    // These sit inside the row's own clickable card, so any tap they do not handle reaches it
+    // and toggles the selection - which, while enabled, would hide nothing but would undo the
+    // very selection being configured. The container swallows what the rows below do not.
+    //
+    // Disabled, the swallow is deliberately dropped: a tap should then do what tapping anywhere
+    // else on the card does, select the sender, which is also what makes these usable.
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (enabled) Modifier.noRippleClickable { } else Modifier),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // Labels state the action, not the current setting: the checkbox already carries that,
+        // and a label that flips between "Delete" and "Keep" makes the pair read as two
+        // different questions. Unticked "Delete" means the thread is kept and marked read - the
+        // Review summary spells that consequence out.
+        DispositionToggle(
+            enabled = enabled,
+            checked = deletes,
+            label = "Delete",
+            onToggle = onSetDelete,
         )
-    }
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(checked = blocks, onCheckedChange = onSetBlock)
-        Text(
-            "Block this number",
-            style = MaterialTheme.typography.labelMedium,
+        DispositionToggle(
+            enabled = enabled,
+            checked = blocks,
+            label = "Block",
+            onToggle = onSetBlock,
             color = if (blocks) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
         )
     }
+}
+
+/**
+ * One disposition checkbox and its label, clickable as a unit.
+ *
+ * Making the whole row the hit target does two things at once: a tap on the words does what the
+ * user plainly meant instead of nothing, and it consumes the event that would otherwise fall
+ * through to the card and deselect the sender.
+ */
+@Composable
+private fun DispositionToggle(
+    enabled: Boolean,
+    checked: Boolean,
+    label: String,
+    onToggle: (Boolean) -> Unit,
+    color: Color = Color.Unspecified,
+) {
+    Row(
+        // Wraps its content rather than filling: the two toggles sit side by side, so each must
+        // claim only its own width or the first would swallow the row.
+        modifier = Modifier
+            .then(if (enabled) Modifier.noRippleClickable { onToggle(!checked) } else Modifier),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = checked, onCheckedChange = onToggle, enabled = enabled)
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            // Dimmed rather than hidden: the state still reads, it just is not actionable yet.
+            color = if (enabled) color else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+        )
+    }
+}
+
+/**
+ * Clickable without a ripple. These live inside a card that already shows its own press
+ * feedback; a second ripple within it would read as a separate button.
+ */
+@Composable
+private fun Modifier.noRippleClickable(onClick: () -> Unit): Modifier {
+    val interactionSource = remember { MutableInteractionSource() }
+    return clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
 }
 
 /**
