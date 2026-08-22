@@ -23,7 +23,14 @@ import kotlin.math.abs
 object Notifications {
 
     const val CHANNEL_INCOMING = "incoming_sms"
-    const val CHANNEL_OPT_OUT_CONFIRMED = "opt_out_confirmed"
+    /**
+     * Note the version suffix. A channel's importance is fixed when it is created - the system
+     * lets an app lower it later but never raise it - so correcting this one from DEFAULT to
+     * HIGH required a new id. Editing the constant alone would have changed nothing on any
+     * device that had already run the app.
+     */
+    const val CHANNEL_OPT_OUT_CONFIRMED = "opt_out_confirmed_v2"
+    private const val CHANNEL_OPT_OUT_CONFIRMED_LEGACY = "opt_out_confirmed"
     const val CHANNEL_BATCH = "batch_progress"
 
     const val BATCH_NOTIFICATION_ID = 1001
@@ -43,14 +50,20 @@ object Notifications {
             },
         )
 
+        // The v1 channel sat at DEFAULT importance, which posts no heads-up banner - the
+        // notification arrived silently in the shade and went unnoticed. Remove it so it does
+        // not linger in the app's notification settings as a dead entry.
+        runCatching { manager.deleteNotificationChannel(CHANNEL_OPT_OUT_CONFIRMED_LEGACY) }
+
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_OPT_OUT_CONFIRMED,
                 "Opt-out confirmations",
-                // Deliberately below the incoming-message channel. This reports that something
-                // the user asked for has finished, not that someone is trying to reach them, and
-                // it is separable so it can be silenced without silencing real texts.
-                NotificationManager.IMPORTANCE_DEFAULT,
+                // HIGH so it actually announces itself. Being told the STOP landed is the whole
+                // point of clearing the message rather than hiding it, and a notification the
+                // user does not see does not inform anyone. It stays a separate channel so it
+                // can be turned down without touching real texts.
+                NotificationManager.IMPORTANCE_HIGH,
             ).apply {
                 description = "When a sender confirms you have been unsubscribed."
             },
@@ -100,7 +113,7 @@ object Notifications {
                     .bigText("$body\n\nThe message was cleared - you deleted this thread.")
             )
             .setCategory(NotificationCompat.CATEGORY_STATUS)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(openAppIntent(context))
             .build()

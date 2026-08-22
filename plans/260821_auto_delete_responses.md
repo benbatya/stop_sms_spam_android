@@ -60,10 +60,24 @@ The user asked not to have to *delete* the reply, not to be kept from knowing th
 So the message is still cleared from the inbox, and a notification says what it said:
 **"Unsubscribed from 64646"** with the sender's own wording.
 
-It gets its own channel, `opt_out_confirmed`, at DEFAULT importance rather than the HIGH used for
-incoming messages. This reports that something the user asked for has finished, not that someone
-is trying to reach them — and a separate channel means it can be silenced without silencing real
-texts.
+It gets its own channel so it can be silenced without silencing real texts.
+
+**The first attempt put that channel at DEFAULT importance**, reasoning that a confirmation
+reports something finishing rather than someone trying to make contact. On the phone that was
+simply wrong: DEFAULT posts **no heads-up banner**, so the notification landed silently in the
+shade and the user reported seeing nothing. The evidence was unambiguous once looked at —
+`opt_out_confirmed` had `mImportance=3, mShowBanner=false` against `incoming_sms` at
+`mImportance=4, mShowBanner=true`, and eight confirmations had been recorded and cleared without
+anyone noticing.
+
+A notification the user does not see does not inform them, which was the entire requirement. The
+channel is now HIGH.
+
+**That correction needed a new channel id** (`opt_out_confirmed_v2`). A channel's importance is
+fixed at creation — the system lets an app lower it later but never raise it — so editing the
+constant alone would have changed nothing on any device that had already run the app, including
+the one the bug was found on. The v1 channel is deleted so it does not linger in settings as a
+dead entry.
 
 ## Verified
 
