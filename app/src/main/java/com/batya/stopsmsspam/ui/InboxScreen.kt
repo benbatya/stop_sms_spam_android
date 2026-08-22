@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.batya.stopsmsspam.data.model.KeywordConfidence
 import com.batya.stopsmsspam.data.model.SpamSender
+import com.batya.stopsmsspam.ui.theme.ConfirmedColors
 import java.text.DateFormat
 import java.util.Date
 
@@ -341,9 +342,11 @@ private fun UnsubscribedRow(
                 disabledContainerColor = MaterialTheme.colorScheme.errorContainer,
                 disabledLabelColor = MaterialTheme.colorScheme.onErrorContainer,
             )
+            // Green, and deliberately the only green in the list: this sender is finished
+            // business, and the badge is the standing reminder of it.
             status.isConfirmed -> AssistChipDefaults.assistChipColors(
-                disabledContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                disabledLabelColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                disabledContainerColor = ConfirmedColors.container,
+                disabledLabelColor = ConfirmedColors.onContainer,
             )
             else -> AssistChipDefaults.assistChipColors(
                 disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,

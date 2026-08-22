@@ -79,6 +79,17 @@ constant alone would have changed nothing on any device that had already run the
 the one the bug was found on. The v1 channel is deleted so it does not linger in settings as a
 dead entry.
 
+## The confirmed badge is green
+
+A confirmed opt-out is the only finished business in the list, and it now looks like it: the
+badge is green and it is the only green in the app, so it reads at a glance as a standing
+reminder that this sender is dealt with.
+
+It borrowed `tertiaryContainer` before. Under dynamic colour that slot is derived from the
+wallpaper — on both test devices it came out purple, which says nothing. Material 3 has no
+success role, so the colour is named explicitly rather than borrowed, with a light and a dark
+value so it stays legible either way.
+
 ## Verified
 
 61 unit tests (up from 57), four of them on the merge rule: a deleted confirmation is restored,
