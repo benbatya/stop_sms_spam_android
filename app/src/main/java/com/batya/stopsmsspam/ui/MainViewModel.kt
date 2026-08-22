@@ -52,6 +52,12 @@ data class UiState(
     val confirmedAddresses: Set<String> = emptySet(),
     /** Address whose block attempt failed, so the UI can say so rather than silently no-op. */
     val lastBlockFailed: String? = null,
+    /**
+     * False when READ_CONTACTS was declined, meaning senders in the user's contacts could not be
+     * filtered out and may be sitting in the list. Surfaced rather than assumed: a filter that
+     * fails open without saying so is worse than no filter, because the user stops checking.
+     */
+    val contactFilterActive: Boolean = false,
 ) {
     val ready: Boolean get() = isDefaultSmsApp && hasSmsPermissions
     val selectedSenders: List<SpamSender> get() = senders.filter { it.normalizedAddress in selected }
@@ -136,12 +142,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val optOut = repository.loadOptOutStatus(senderMemory.rememberedConfirmations())
             val confirmed = optOut.filterValues { it.isConfirmed }.keys
             val senders = repository.loadUnreadSenders(fallback, optOut)
+            val contactFilterActive = repository.contactFilterActive()
             _state.update { current ->
                 // Drop selections and edits for senders that are no longer unread.
                 val liveKeys = senders.map { it.normalizedAddress }.toSet()
                 current.copy(
                     loading = false,
                     senders = senders,
+                    contactFilterActive = contactFilterActive,
                     confirmedAddresses = confirmed,
                     selected = current.selected intersect liveKeys,
                     keywordOverrides = current.keywordOverrides.filterKeys { it in liveKeys },
@@ -174,7 +182,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun selectAll() {
         _state.update { current ->
-            current.copy(selected = current.senders.map { it.normalizedAddress }.toSet())
+            current.copy(
+                selected = current.senders
+                    .filter { it.includedInSelectAll }
+                    .map { it.normalizedAddress }
+                    .toSet(),
+            )
         }
     }
 

@@ -115,6 +115,9 @@ fun AppRoot(viewModel: MainViewModel) {
             Screen.Inbox -> InboxScreen(
                 state = state,
                 contentPadding = padding,
+                onRequestContacts = {
+                    permissionLauncher.launch(arrayOf(Manifest.permission.READ_CONTACTS))
+                },
                 onToggle = viewModel::toggleSelection,
                 onSelectAll = viewModel::selectAll,
                 onClearSelection = viewModel::clearSelection,
@@ -280,6 +283,9 @@ private fun requiredPermissions(): Array<String> = buildList {
     add(Manifest.permission.READ_SMS)
     add(Manifest.permission.SEND_SMS)
     add(Manifest.permission.RECEIVE_SMS)
+    // Not required to run, but without it the app cannot tell a stranger from somebody in the
+    // user's contacts, and the batch deletes threads.
+    add(Manifest.permission.READ_CONTACTS)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         add(Manifest.permission.POST_NOTIFICATIONS)
     }

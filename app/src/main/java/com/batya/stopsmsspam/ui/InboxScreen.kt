@@ -41,6 +41,7 @@ import java.util.Date
 fun InboxScreen(
     state: UiState,
     contentPadding: PaddingValues,
+    onRequestContacts: () -> Unit,
     onToggle: (SpamSender) -> Unit,
     onSelectAll: () -> Unit,
     onClearSelection: () -> Unit,
@@ -87,6 +88,40 @@ fun InboxScreen(
             ) {
                 TextButton(onClick = onSelectAll) { Text("Select all") }
                 TextButton(onClick = onClearSelection) { Text("Clear") }
+            }
+        }
+
+        val skippedBySelectAll = state.senders.count { !it.includedInSelectAll }
+        if (skippedBySelectAll > 0) {
+            item {
+                Text(
+                    "\"Select all\" skips " + countOf(skippedBySelectAll, "sender") +
+                        " that never offered an opt-out - replying only confirms the number is " +
+                        "live. Select those by hand if you want them.",
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
+        }
+
+        if (!state.contactFilterActive) {
+            item {
+                Card(
+                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                    ),
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text(
+                            "Contacts access is off, so people you know cannot be filtered " +
+                                "out - anyone in this list could be one of them. Check each " +
+                                "sender before selecting, and remember the batch deletes.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        TextButton(onClick = onRequestContacts) { Text("Grant contacts access") }
+                    }
+                }
             }
         }
 

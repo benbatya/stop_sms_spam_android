@@ -3,6 +3,8 @@
 
     <!-- Reading the inbox and replying is the whole job. -->
     <uses-permission android:name="android.permission.READ_SMS" />
+    <!-- Read-only, and used only to keep people the user knows out of a batch that deletes. -->
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.SEND_SMS" />
 
     <!-- Required of the default SMS app: it, not the system, stores incoming messages. -->

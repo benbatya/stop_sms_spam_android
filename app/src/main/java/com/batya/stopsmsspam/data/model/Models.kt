@@ -105,6 +105,19 @@ data class SpamSender(
      * to such a sender tells them the number is live while likely stopping nothing.
      */
     val hasOptOutLanguage: Boolean get() = keyword.confidence != KeywordConfidence.ASSUMED
+
+    /**
+     * Whether "Select all" may include this sender.
+     *
+     * It skips exactly one case: a sender that would be *texted* despite never having offered an
+     * opt-out. Replying there is the move with a real downside - it confirms the number is live
+     * to someone who never asked for a keyword and probably will not honour one - so it should
+     * be a sender the user picked deliberately, not one swept up in a bulk action.
+     *
+     * A sender already opted out is still included even with no opt-out language, because the
+     * batch only clears its thread; nothing gets sent, so there is nothing to be careful about.
+     */
+    val includedInSelectAll: Boolean get() = !canReply || hasOptOutLanguage
 }
 
 /** One queued reply: what to send, to whom, and which inbox rows it clears. */
