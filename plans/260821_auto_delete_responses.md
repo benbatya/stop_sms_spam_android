@@ -79,16 +79,32 @@ constant alone would have changed nothing on any device that had already run the
 the one the bug was found on. The v1 channel is deleted so it does not linger in settings as a
 dead entry.
 
-## The confirmed badge is green
+## The batch result goes green when the sender answers
 
-A confirmed opt-out is the only finished business in the list, and it now looks like it: the
-badge is green and it is the only green in the app, so it reads at a glance as a standing
-reminder that this sender is dealt with.
+Sending `STOP` is only half the job — what matters is whether the sender honoured it. The
+progress screen's per-sender row is where that question gets asked, so that is where the answer
+belongs: the row turns green and reads `STOP — confirmed` once the confirmation arrives.
 
-It borrowed `tertiaryContainer` before. Under dynamic colour that slot is derived from the
-wallpaper — on both test devices it came out purple, which says nothing. Material 3 has no
-success role, so the colour is named explicitly rather than borrowed, with a light and a dark
-value so it stays legible either way.
+This first went on the inbox's "Unsubscribed" badge, which was the wrong place. That badge
+already says the thing in words, and by the time it shows, the batch it belongs to is long gone.
+The progress list is the record of a specific batch, and green there answers the question the
+user actually has while looking at it. The badge is back to `tertiaryContainer`.
+
+The colour is named explicitly (`ConfirmedColors`) rather than borrowed from the scheme.
+Material 3 has no success role, and `tertiaryContainer` is derived from the wallpaper under
+dynamic colour — on both test devices it came out purple, which says nothing. Light and dark
+values are given so it stays legible either way.
+
+**The screen has to poll for it.** A `SendOutcome` is written at send time and never updated; a
+confirmation lands seconds to minutes later, usually while the user is still watching. Nothing
+else on that screen would trigger a reload — there is no navigation, no resume — so it calls
+`refreshConfirmations()` every 5s while it is up. That re-derives from the provider and touches
+only `confirmedAddresses`, leaving the batch state alone.
+
+`confirmedAddresses` is carried in `UiState` beside the sender list rather than read off it,
+because the sender whose row just went green usually has no thread any more: the default
+disposition is delete, so the batch removed it. The confirmation still resolves, via the
+provider when the reply is there and via `SenderMemory` when auto-delete already took it.
 
 ## Verified
 
@@ -106,6 +122,10 @@ End to end on the Android 12 emulator, in the order that matters:
 3. A later marketing message from the same number → **does** arrive, 1 inbox row. Not swallowed.
 4. Reopening the app shows it as **STOP IGNORED** with the Block button — the escalation intact
    from a confirmation that no longer exists anywhere in the provider.
+
+And the green row, verified without leaving the screen: real batch to `44551`, row grey and
+reading `STOP ✓`; the confirmation sent from `44551` while the progress screen stayed up; within
+one poll the same row was green and read `STOP — confirmed`.
 
 ## Out of scope
 

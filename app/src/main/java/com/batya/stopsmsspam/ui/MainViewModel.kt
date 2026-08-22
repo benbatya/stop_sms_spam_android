@@ -44,6 +44,12 @@ data class UiState(
     /** Per-sender overrides of the default blocking decision, keyed by normalized address. */
     val blockOverrides: Map<String, Boolean> = emptyMap(),
     val settings: AppSettings = AppSettings(),
+    /**
+     * Senders that have acknowledged an opt-out, by normalized address. Kept beside the sender
+     * list rather than derived from it, because the progress screen needs it for senders whose
+     * threads are already gone.
+     */
+    val confirmedAddresses: Set<String> = emptySet(),
     /** Address whose block attempt failed, so the UI can say so rather than silently no-op. */
     val lastBlockFailed: String? = null,
 ) {
@@ -128,6 +134,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _state.update { it.copy(loading = true) }
             val fallback = settingsStore.current().fallbackKeyword
             val optOut = repository.loadOptOutStatus(senderMemory.rememberedConfirmations())
+            val confirmed = optOut.filterValues { it.isConfirmed }.keys
             val senders = repository.loadUnreadSenders(fallback, optOut)
             _state.update { current ->
                 // Drop selections and edits for senders that are no longer unread.
@@ -135,6 +142,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 current.copy(
                     loading = false,
                     senders = senders,
+                    confirmedAddresses = confirmed,
                     selected = current.selected intersect liveKeys,
                     keywordOverrides = current.keywordOverrides.filterKeys { it in liveKeys },
                     keepMessages = current.keepMessages intersect liveKeys,
@@ -248,6 +256,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateSettings(transform: (AppSettings) -> AppSettings) {
         viewModelScope.launch { settingsStore.update(transform) }
+    }
+
+    /**
+     * Re-reads which senders have confirmed, without disturbing the batch on screen.
+     *
+     * A confirmation arrives after its send, often while the user is still watching the progress
+     * list, and nothing else on that screen would prompt a reload.
+     */
+    fun refreshConfirmations() {
+        viewModelScope.launch {
+            val optOut = repository.loadOptOutStatus(senderMemory.rememberedConfirmations())
+            _state.update { it.copy(confirmedAddresses = optOut.filterValues { s -> s.isConfirmed }.keys) }
+        }
     }
 
     fun goTo(screen: Screen) {

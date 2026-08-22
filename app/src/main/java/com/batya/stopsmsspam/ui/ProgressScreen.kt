@@ -23,13 +23,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.batya.stopsmsspam.data.PhoneAddress
 import com.batya.stopsmsspam.data.model.BatchProgress
 import com.batya.stopsmsspam.data.model.SendStatus
+import com.batya.stopsmsspam.ui.theme.ConfirmedColors
 import kotlinx.coroutines.delay
 import kotlin.math.max
 
 @Composable
-fun ProgressScreen(progress: BatchProgress, contentPadding: PaddingValues) {
+fun ProgressScreen(
+    progress: BatchProgress,
+    /**
+     * Senders that have since acknowledged the opt-out, by normalized address. The batch itself
+     * cannot know this - a confirmation arrives seconds or minutes after the send - so it is
+     * carried in separately and the row turns green when it lands.
+     */
+    confirmedAddresses: Set<String>,
+    contentPadding: PaddingValues,
+) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = contentPadding,
@@ -100,12 +111,18 @@ fun ProgressScreen(progress: BatchProgress, contentPadding: PaddingValues) {
         }
 
         items(progress.outcomes.asReversed()) { outcome ->
+            val confirmed = PhoneAddress.normalize(outcome.address) in confirmedAddresses
             Card(
                 Modifier.fillMaxWidth().padding(horizontal = 8.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = when (outcome.status) {
-                        SendStatus.FAILED, SendStatus.UNCONFIRMED ->
+                    containerColor = when {
+                        outcome.status == SendStatus.FAILED ||
+                            outcome.status == SendStatus.UNCONFIRMED ->
                             MaterialTheme.colorScheme.errorContainer
+                        // The sender answered. Sending is only half the job - this is the row
+                        // saying the opt-out actually took, and it stays green as the record of
+                        // it rather than disappearing with the batch.
+                        confirmed -> ConfirmedColors.container
                         else -> MaterialTheme.colorScheme.surfaceVariant
                     },
                 ),
@@ -122,7 +139,10 @@ fun ProgressScreen(progress: BatchProgress, contentPadding: PaddingValues) {
                         }
                     }
                     Text(
-                        when (outcome.status) {
+                        when {
+                            confirmed -> "${outcome.keyword} — confirmed"
+                            else -> null
+                        } ?: when (outcome.status) {
                             SendStatus.SENT -> "${outcome.keyword} ✓"
                             SendStatus.FAILED -> "failed"
                             SendStatus.UNCONFIRMED -> "unconfirmed"
