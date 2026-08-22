@@ -45,9 +45,12 @@ the 61-versus-60 test above.
 
 ## Verified
 
-67 unit tests, `lintDebug` and `assembleDebug` clean. On the Android 12 emulator the pacing
-slider shows six detents instead of ten, and dragging to the far end reads
-`Delay between replies: 61s`.
+`lintDebug` and `assembleDebug` clean. On the Android 12 emulator the pacing slider shows six
+detents instead of ten, and dragging to the far end reads `Delay between replies: 61s`.
+
+67 unit tests when the branch was written; 74 after rebasing onto a `main` that had gained the
+contacts filter. The two are unrelated changes touching disjoint files, and the rebase replayed
+without conflict - the combined suite passing is what says so.
 
 ## Out of scope
 
