@@ -86,6 +86,35 @@ While **this app holds the SMS role**, incoming MMS are not written to the provi
 by the previous default app, and any MMS that arrives while the app is default still will not
 appear. Reading and receiving are different problems; only the first is solved here.
 
+## Rebased onto the auto-delete work
+
+This branch and `260821_auto_delete_responses` were siblings off the same `main`, and that one
+landed first. Rebasing conflicted in `BulkReplyService` and `MainViewModel` — both times the same
+shape, and both times mechanical: this branch renamed `messageIds` to `messages` (bare SMS ids
+became `MessageRef`s), while the other added a `SenderMemory.markAutoDeleteResponses(...)` call
+alongside. Nothing overlapped in meaning, so the resolution is the rename applied to the retained
+auto-delete call.
+
+Worth naming because the two features meet exactly there: deleting an MMS sender's thread now
+runs `repository.delete(plan.messages)` over refs spanning both tables *and* registers the sender
+so its confirmation is dropped on arrival. The tests and build passing after the rebase is the
+evidence they compose.
+
+## Verified
+
+66 unit tests, three of them new and specifically on the badge's distinction — mixed, all-MMS and
+all-SMS — because `hasMms` alone would mislabel a mostly-SMS thread. `lintDebug` and
+`assembleDebug` clean, before and after the rebase.
+
+The MMS queries were validated by replicating them against the real phone provider, which is
+where the RCS-participant and group-thread exclusions came from; the emulator has no MMS at all,
+so none of that was discoverable there.
+
+**The badge has not been seen rendering.** It only appears against real MMS, `adb emu sms send`
+sends SMS only, and the MMS address tables are derived views that cannot be populated from the
+shell — so the phone is the only place it shows, and it was locked. Compilation and the three
+tests are the whole of the evidence for it so far.
+
 ## Out of scope
 
 - Rendering MMS content — attachments, images, subjects.
