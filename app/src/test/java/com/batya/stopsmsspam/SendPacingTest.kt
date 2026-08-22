@@ -41,17 +41,28 @@ class SendPacingTest {
     }
 
     @Test
-    fun `the offered delays are the Fibonacci sequence up to the last term under 100`() {
-        assertEquals(listOf(1, 2, 3, 5, 8, 13, 21, 34, 55, 89), SendPacing.DELAY_STEPS)
+    fun `the offered delays are the six the user asked for`() {
+        assertEquals(listOf(1, 5, 10, 15, 31, 61), SendPacing.DELAY_STEPS)
         assertEquals(1, SendPacing.MIN_DELAY_SECONDS)
-        assertEquals(89, SendPacing.MAX_DELAY_SECONDS)
+        assertEquals(61, SendPacing.MAX_DELAY_SECONDS)
     }
 
     @Test
-    fun `every step really is the sum of the two before it`() {
-        val steps = SendPacing.DELAY_STEPS
-        for (i in 2 until steps.size) {
-            assertEquals("step $i", steps[i - 2] + steps[i - 1], steps[i])
+    fun `the steps ascend, so the slider and nearestStep behave`() {
+        assertEquals(SendPacing.DELAY_STEPS.sorted(), SendPacing.DELAY_STEPS)
+        assertEquals(SendPacing.DELAY_STEPS.distinct(), SendPacing.DELAY_STEPS)
+    }
+
+    // Why the top step is 61 and not the rounder 60: at 60s exactly the window still admits 31
+    // messages against a limit of 30, so a long batch would stall on per-message system dialogs.
+    // Rounding this step down would quietly break unattended runs, which is worth a test.
+    @Test
+    fun `sixty-one is the shortest whole second that clears the framework check`() {
+        val big = 10_000
+        assertFalse(SendPacing.exceedsFrameworkThrottle(big, 61))
+        assertTrue(SendPacing.exceedsFrameworkThrottle(big, 60))
+        for (delay in 1 until 61) {
+            assertTrue("$delay should still be throttled", SendPacing.exceedsFrameworkThrottle(big, delay))
         }
     }
 
@@ -62,11 +73,19 @@ class SendPacingTest {
 
     @Test
     fun `snaps an off-step delay onto the nearest one it offers`() {
-        // Values stored when the range was different must not leave the slider between detents.
-        assertEquals(55, SendPacing.nearestStep(60))
-        assertEquals(8, SendPacing.nearestStep(10))
-        assertEquals(89, SendPacing.nearestStep(300))
+        // Values stored when the range was different must not leave the slider between detents -
+        // every one of the old Fibonacci steps is such a value now.
+        assertEquals(61, SendPacing.nearestStep(60))
+        assertEquals(10, SendPacing.nearestStep(10))
+        assertEquals(61, SendPacing.nearestStep(300))
         assertEquals(1, SendPacing.nearestStep(0))
+        assertEquals(1, SendPacing.nearestStep(2))
+        // Exactly between 1 and 5: ties round up, so a stored 3s never becomes a faster batch
+        // than the user chose.
+        assertEquals(5, SendPacing.nearestStep(3))
+        assertEquals(10, SendPacing.nearestStep(8))
+        assertEquals(15, SendPacing.nearestStep(13))
+        assertEquals(31, SendPacing.nearestStep(34))
         // An exact step is left alone.
         SendPacing.DELAY_STEPS.forEach { assertEquals(it, SendPacing.nearestStep(it)) }
     }
@@ -75,7 +94,7 @@ class SendPacingTest {
     fun `step index points at the snapped value`() {
         assertEquals(0, SendPacing.stepIndexOf(1))
         assertEquals(SendPacing.DELAY_STEPS.lastIndex, SendPacing.stepIndexOf(89))
-        assertEquals(SendPacing.DELAY_STEPS.indexOf(55), SendPacing.stepIndexOf(60))
+        assertEquals(SendPacing.DELAY_STEPS.indexOf(61), SendPacing.stepIndexOf(60))
     }
 
     @Test
