@@ -21,6 +21,15 @@ import kotlinx.coroutines.withContext
  */
 class SmsRepository(private val context: Context) {
 
+    private val contacts = ContactDirectory(context)
+
+    /**
+     * Whether contacts can be filtered out at all. False means the list may contain people the
+     * user knows, which the UI has to say out loud - the whole point of the filter is that a
+     * batch never touches them.
+     */
+    fun contactFilterActive(): Boolean = contacts.canReadContacts()
+
     fun canReadSms(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) ==
             PackageManager.PERMISSION_GRANTED
@@ -77,7 +86,14 @@ class SmsRepository(private val context: Context) {
 
             val all = (messages + runCatching { loadUnreadMms() }.getOrDefault(emptyList()))
                 .sortedByDescending { it.date }
-            SenderGrouping.group(all, fallbackKeyword, optedOut)
+            val senders = SenderGrouping.group(all, fallbackKeyword, optedOut)
+
+            // Last step, and deliberately after grouping: one contacts lookup per sender rather
+            // than per message. Everything downstream treats this list as fair game to delete.
+            ContactFilter.exclude(
+                senders,
+                contacts.contactsAmong(senders.map { it.displayAddress }),
+            )
         }
 
     /**
