@@ -75,6 +75,12 @@ End to end on the Android 12 emulator, with a contact inserted for `44551`:
 4. Revoking `READ_CONTACTS` and reopening: the red banner appears and `44551` **returns** to the
    list - the filter's absence is visible rather than silent.
 
+The contact it was tested against was inserted through the provider by hand, so what is proven
+is the *rule*, not `PhoneLookup` against a real contacts database with its accounts, duplicates
+and merged entries. Installed to the physical device for that, where `READ_CONTACTS` sits
+ungranted until the user accepts the prompt - deliberately not granted over adb, since it is
+their contacts to hand over.
+
 ## Out of scope
 
 - Any change to what "unread" means, or to the SMS/MMS queries themselves.
