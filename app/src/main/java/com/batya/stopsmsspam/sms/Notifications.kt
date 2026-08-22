@@ -23,10 +23,19 @@ import kotlin.math.abs
 object Notifications {
 
     const val CHANNEL_INCOMING = "incoming_sms"
+    /**
+     * Note the version suffix. A channel's importance is fixed when it is created - the system
+     * lets an app lower it later but never raise it - so correcting this one from DEFAULT to
+     * HIGH required a new id. Editing the constant alone would have changed nothing on any
+     * device that had already run the app.
+     */
+    const val CHANNEL_OPT_OUT_CONFIRMED = "opt_out_confirmed_v2"
+    private const val CHANNEL_OPT_OUT_CONFIRMED_LEGACY = "opt_out_confirmed"
     const val CHANNEL_BATCH = "batch_progress"
 
     const val BATCH_NOTIFICATION_ID = 1001
     private const val INCOMING_ID_BASE = 2000
+    private const val CONFIRMED_ID_BASE = 3000
 
     fun createChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
@@ -38,6 +47,25 @@ object Notifications {
                 NotificationManager.IMPORTANCE_HIGH,
             ).apply {
                 description = "Texts that arrive while this app is your default SMS app."
+            },
+        )
+
+        // The v1 channel sat at DEFAULT importance, which posts no heads-up banner - the
+        // notification arrived silently in the shade and went unnoticed. Remove it so it does
+        // not linger in the app's notification settings as a dead entry.
+        runCatching { manager.deleteNotificationChannel(CHANNEL_OPT_OUT_CONFIRMED_LEGACY) }
+
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_OPT_OUT_CONFIRMED,
+                "Opt-out confirmations",
+                // HIGH so it actually announces itself. Being told the STOP landed is the whole
+                // point of clearing the message rather than hiding it, and a notification the
+                // user does not see does not inform anyone. It stays a separate channel so it
+                // can be turned down without touching real texts.
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply {
+                description = "When a sender confirms you have been unsubscribed."
             },
         )
 
@@ -65,6 +93,31 @@ object Notifications {
             .setContentIntent(openAppIntent(context))
             .build()
         notifySafely(context, INCOMING_ID_BASE + abs(address.hashCode() % 1000), notification)
+    }
+
+    /**
+     * Reports that a sender acknowledged an opt-out, for the case where the message carrying
+     * that acknowledgement was deleted on arrival.
+     *
+     * Dropping it silently would mean the user never learns the STOP worked - the one piece of
+     * good news the whole exercise produces. So the message is still cleared from the inbox, and
+     * this says what it said.
+     */
+    fun notifyOptOutConfirmed(context: Context, address: String, body: String) {
+        val notification = NotificationCompat.Builder(context, CHANNEL_OPT_OUT_CONFIRMED)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Unsubscribed from $address")
+            .setContentText(body)
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .bigText("$body\n\nThe message was cleared - you deleted this thread.")
+            )
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(openAppIntent(context))
+            .build()
+        notifySafely(context, CONFIRMED_ID_BASE + abs(address.hashCode() % 1000), notification)
     }
 
     /**

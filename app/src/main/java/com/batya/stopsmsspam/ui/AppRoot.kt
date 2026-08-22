@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -131,7 +133,22 @@ fun AppRoot(viewModel: MainViewModel) {
                 onSettingsChange = { updated -> viewModel.updateSettings { updated } },
             )
 
-            Screen.Progress -> ProgressScreen(progress = progress, contentPadding = padding)
+            Screen.Progress -> {
+                // Confirmations arrive while this screen is up, so it polls gently rather than
+                // waiting for a resume the user may not perform - they are watching this list
+                // precisely to see whether the opt-outs took.
+                LaunchedEffect(progress.outcomes.size, progress.running) {
+                    while (true) {
+                        viewModel.refreshConfirmations()
+                        delay(5_000)
+                    }
+                }
+                ProgressScreen(
+                    progress = progress,
+                    confirmedAddresses = state.confirmedAddresses,
+                    contentPadding = padding,
+                )
+            }
         }
     }
 

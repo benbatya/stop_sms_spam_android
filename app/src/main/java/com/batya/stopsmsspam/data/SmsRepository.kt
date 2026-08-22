@@ -89,7 +89,9 @@ class SmsRepository(private val context: Context) {
      * The second query is bounded by the first: with no opt-outs sent there is nothing to look
      * for, and otherwise only messages newer than the earliest opt-out can possibly confirm one.
      */
-    suspend fun loadOptOutStatus(): Map<String, OptOutStatus> = withContext(Dispatchers.IO) {
+    suspend fun loadOptOutStatus(
+        rememberedConfirmations: Map<String, Long> = emptyMap(),
+    ): Map<String, OptOutStatus> = withContext(Dispatchers.IO) {
         if (!canReadSms()) return@withContext emptyMap()
 
         val sent = context.contentResolver.query(
@@ -127,7 +129,7 @@ class SmsRepository(private val context: Context) {
             "${Telephony.Sms.DATE} > ?",
             arrayOf(earliest.toString()),
             "${Telephony.Sms.DATE} ASC",
-        ) ?: return@withContext optOuts
+        ) ?: return@withContext RememberedConfirmations.applyTo(optOuts, rememberedConfirmations)
 
         replies.use {
             val addressIdx = it.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
@@ -146,7 +148,9 @@ class SmsRepository(private val context: Context) {
                 optOuts[key] = pending.copy(confirmedAtMillis = date)
             }
         }
-        optOuts
+        // Confirmations whose message was deleted on arrival are folded back in here: the
+        // provider cannot answer for evidence the app was asked to destroy.
+        RememberedConfirmations.applyTo(optOuts, rememberedConfirmations)
     }
 
     /**
