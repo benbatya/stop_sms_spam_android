@@ -49,6 +49,7 @@ object SenderGrouping {
                 )
             }
             builder.messages += message.ref
+            builder.threadIds += message.threadId
         }
 
         return builders.values.map { builder ->
@@ -56,6 +57,7 @@ object SenderGrouping {
                 normalizedAddress = builder.normalizedAddress,
                 displayAddress = builder.displayAddress,
                 messages = builder.messages.toList(),
+                threadIds = builder.threadIds.toSet(),
                 latestBody = builder.latestBody,
                 latestDate = builder.latestDate,
                 subscriptionId = builder.subscriptionId,
@@ -73,5 +75,6 @@ object SenderGrouping {
         val latestDate: Long,
         val subscriptionId: Int,
         val messages: MutableList<MessageRef> = mutableListOf(),
+        val threadIds: MutableSet<Long> = mutableSetOf(),
     )
 }

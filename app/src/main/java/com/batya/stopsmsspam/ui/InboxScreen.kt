@@ -42,7 +42,7 @@ fun InboxScreen(
     state: UiState,
     contentPadding: PaddingValues,
     onRequestContacts: () -> Unit,
-    onSetHideBlocked: (Boolean) -> Unit,
+    onSetHideHandled: (Boolean) -> Unit,
     onToggle: (SpamSender) -> Unit,
     onSelectAll: () -> Unit,
     onClearSelection: () -> Unit,
@@ -94,7 +94,7 @@ fun InboxScreen(
 
         // Shown whenever the filter is off, not only when it hid something: with it off and the
         // count at zero the line is the only way to discover the toggle exists at all.
-        if (state.hiddenBlockedCount > 0 || !state.settings.hideBlockedSenders) {
+        if (state.hiddenHandledCount > 0 || !state.settings.hideHandledSenders) {
             item {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
@@ -102,19 +102,19 @@ fun InboxScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        if (state.settings.hideBlockedSenders) {
-                            countOf(state.hiddenBlockedCount, "sender") +
-                                " hidden - already blocked"
+                        if (state.settings.hideHandledSenders) {
+                            countOf(state.hiddenHandledCount, "sender") +
+                                " hidden - blocked, or archived in your messaging app"
                         } else {
-                            "Showing senders you have already blocked"
+                            "Showing senders your messaging app already dealt with"
                         },
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.weight(1f),
                     )
                     TextButton(
-                        onClick = { onSetHideBlocked(!state.settings.hideBlockedSenders) },
+                        onClick = { onSetHideHandled(!state.settings.hideHandledSenders) },
                     ) {
-                        Text(if (state.settings.hideBlockedSenders) "Show them" else "Hide them")
+                        Text(if (state.settings.hideHandledSenders) "Show them" else "Hide them")
                     }
                 }
             }
@@ -182,7 +182,7 @@ fun InboxScreen(
             SenderRow(
                 sender = sender,
                 keyword = state.keywordFor(sender),
-                blocked = sender.normalizedAddress in state.blockedAddresses,
+                handled = state.handledAddresses[sender.normalizedAddress],
                 selected = sender.normalizedAddress in state.selected,
                 onToggle = { onToggle(sender) },
                 onMarkRead = { onMarkRead(sender) },
@@ -201,7 +201,7 @@ fun InboxScreen(
 private fun SenderRow(
     sender: SpamSender,
     keyword: String,
-    blocked: Boolean,
+    handled: HandledReason?,
     selected: Boolean,
     onToggle: () -> Unit,
     onMarkRead: () -> Unit,
@@ -242,7 +242,7 @@ private fun SenderRow(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(sender.displayAddress, style = MaterialTheme.typography.titleSmall)
-                        if (blocked) BlockedBadge()
+                        handled?.let { HandledBadge(it) }
                         if (sender.hasMms) MmsBadge(sender.isAllMms)
                     }
                     Text(
@@ -292,7 +292,7 @@ private fun SenderRow(
 }
 
 /**
- * Marks a sender that is already on the system blocked list.
+ * Marks a sender the messaging app already dealt with - blocked, or archived.
  *
  * Only ever seen with the hide toggle off, and that is the point: once the rows are shown, the
  * user needs to know which of them are the ones normally filtered away. Without it, turning the
@@ -302,9 +302,9 @@ private fun SenderRow(
  * says the system is already refusing this sender's messages.
  */
 @Composable
-private fun BlockedBadge() {
+private fun HandledBadge(reason: HandledReason) {
     Text(
-        "Blocked",
+        if (reason == HandledReason.BLOCKED) "Blocked" else "Archived",
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onErrorContainer,
         modifier = Modifier

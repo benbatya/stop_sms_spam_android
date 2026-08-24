@@ -147,6 +147,42 @@ class SmsRepository(private val context: Context) {
     }
 
     /** thread id -> the single other party, for one-to-one threads only. */
+    /**
+     * Threads the messaging app has archived.
+     *
+     * The closest readable proxy for "already dealt with". Google Messages archives the threads
+     * it files as spam, and archiving is on the conversations table where any app can read it -
+     * unlike its spam classification, which lives in its own database and is readable by nobody.
+     *
+     * On the phone this was measured against, 831 of 925 threads holding unread messages were
+     * archived. That ratio is the whole reason this exists: the blocked list, which was the first
+     * guess, matched **none** of 875 senders, because blocking stops delivery so a blocked sender
+     * stops accumulating unread messages at all.
+     *
+     * One bulk query, not one per thread.
+     */
+    suspend fun archivedThreadIds(): Set<Long> = withContext(Dispatchers.IO) {
+        if (!canReadSms()) return@withContext emptySet()
+        runCatching {
+            context.contentResolver.query(
+                Uri.parse("content://mms-sms/conversations?simple=true"),
+                arrayOf("_id", "archived"),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
+                val idIdx = cursor.getColumnIndex("_id")
+                val archivedIdx = cursor.getColumnIndex("archived")
+                if (idIdx < 0 || archivedIdx < 0) return@use emptySet<Long>()
+                buildSet {
+                    while (cursor.moveToNext()) {
+                        if (cursor.getInt(archivedIdx) == 1) add(cursor.getLong(idIdx))
+                    }
+                }
+            } ?: emptySet()
+        }.getOrDefault(emptySet())
+    }
+
     private fun threadAddresses(): Map<Long, String> {
         val recipients = HashMap<Long, String>()
         context.contentResolver.query(

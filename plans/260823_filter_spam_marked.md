@@ -23,7 +23,29 @@ classification. Three candidates were put to the user:
 3. **Google Messages' own spam folder** - its private database, readable by no other app, so
    that reading would have been "cannot be built as asked".
 
-**Chosen: the blocked list.** The app already reads it for its own Block feature.
+**Chosen initially: the blocked list.** The app already reads it for its own Block feature.
+
+**That turned out to be the wrong signal, and the device proved it.** On the user's phone the
+line never appeared. A temporary diagnostic settled why:
+
+```
+checked=875  blocked=0  errors=0
+```
+
+All 875 senders checked, no exceptions, **none blocked**. Two reasons, and both are structural
+rather than accidental:
+
+- Google Messages' automatic **spam** classification does not write to `BlockedNumberContract`.
+  Only an explicit "Block" does. Both land in the same "Spam & blocked" folder in its UI, which
+  is why they look like one thing from outside.
+- Even for a number that *is* blocked, Android drops its incoming SMS before delivery - so a
+  blocked sender stops accumulating unread messages. A well-populated blocked list can still
+  legitimately yield zero hidden senders here.
+
+**Archived threads are the signal that matches.** Of the 925 threads holding unread messages on
+that phone, **831 were archived and 94 were not** - Google Messages archives what it files as
+spam, and `archived` is on the conversations table where anyone can read it. So the toggle now
+covers both: blocked, or every one of the sender's threads archived.
 
 ## Where the filter lives, and why there
 
@@ -59,10 +81,20 @@ there is no line - toggling would change nothing visible, so the control would b
 briefly mistaken for a discoverability bug; it is not, because the control appears exactly when
 it has an effect.
 
-## Shown senders say they are blocked
+## Shown senders say why they were hidden
 
 With the filter off the list simply got longer, with nothing saying which rows had been added -
-so a blocked sender now carries a **Blocked** badge next to its number.
+so a hidden-when-on sender carries a badge reading **Blocked** or **Archived**.
+
+Two values rather than one boolean, because they mean different things: blocked is the system
+refusing the sender's messages, archived is only "filed away" - and an archived thread is far
+more likely to hold something the user still wants. Blocked wins when both apply, being the
+stronger statement.
+
+**A sender counts as archived only when *every* one of its threads is.** A sender with one
+archived thread and one live one still has somewhere the user is reading, and hiding it would
+lose a real message. That is why thread ids had to be carried onto `SpamSender` through grouping
+rather than checked per message.
 
 `blockedAddresses` on `UiState` is a *marker* set, not a second sender list: it says something
 about the senders already visible rather than offering a route around the filter, so it does not
@@ -99,12 +131,14 @@ on three, and further messages sent after the plan snapshot):
    the number; `18885551234` does not.
 6. "Hide them" → **`4 senders hidden - already blocked`**, list down to `Unread (1)`.
 
-Every blocked number in that verification was put there by this app, minutes earlier. The case
-the feature exists for - a list built up over time by Google Messages' "Block & report spam" -
-has not been exercised: installed to the physical device for that, but the SMS role had reverted
-to Messages and `READ_CONTACTS` was ungranted, both of which the user has to restore by hand.
-So what is proven is the filter, the toggle, the badge and the selection pruning; what is not is
-how many senders this actually hides on a real inbox.
+79 unit tests after the archived work, three of them on thread ids surviving grouping and on the
+all-threads-or-nothing rule.
+
+**The archived path has been measured but not yet seen running.** The 831-of-925 figure comes
+from querying the phone's own provider directly, so the filter will hide roughly that many - but
+the phone locked before the rebuilt app could be observed, so the banner and badges have only
+been watched on the emulator, against blocked senders this app created itself. What the emulator
+cannot supply is an archived thread, and what the phone has not yet shown is either.
 
 ## Out of scope
 

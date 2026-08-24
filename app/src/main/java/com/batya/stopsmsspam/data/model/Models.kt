@@ -52,6 +52,8 @@ data class SpamSender(
     /** The address exactly as the provider stored it. This is what we reply to. */
     val displayAddress: String,
     val messages: List<MessageRef>,
+    /** Threads this sender's unread messages belong to; usually one. */
+    val threadIds: Set<Long> = emptySet(),
     val latestBody: String,
     val latestDate: Long,
     val subscriptionId: Int,
