@@ -42,6 +42,7 @@ fun InboxScreen(
     state: UiState,
     contentPadding: PaddingValues,
     onRequestContacts: () -> Unit,
+    onSetHideHandled: (Boolean) -> Unit,
     onToggle: (SpamSender) -> Unit,
     onSelectAll: () -> Unit,
     onClearSelection: () -> Unit,
@@ -88,6 +89,34 @@ fun InboxScreen(
             ) {
                 TextButton(onClick = onSelectAll) { Text("Select all") }
                 TextButton(onClick = onClearSelection) { Text("Clear") }
+            }
+        }
+
+        // Shown whenever the filter is off, not only when it hid something: with it off and the
+        // count at zero the line is the only way to discover the toggle exists at all.
+        if (state.hiddenHandledCount > 0 || !state.settings.hideHandledSenders) {
+            item {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        if (state.settings.hideHandledSenders) {
+                            countOf(state.hiddenHandledCount, "sender") +
+                                " hidden - blocked, or archived in your messaging app"
+                        } else {
+                            "Showing senders your messaging app already dealt with"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        onClick = { onSetHideHandled(!state.settings.hideHandledSenders) },
+                    ) {
+                        Text(if (state.settings.hideHandledSenders) "Show them" else "Hide them")
+                    }
+                }
             }
         }
 
@@ -153,6 +182,7 @@ fun InboxScreen(
             SenderRow(
                 sender = sender,
                 keyword = state.keywordFor(sender),
+                handled = state.handledAddresses[sender.normalizedAddress],
                 selected = sender.normalizedAddress in state.selected,
                 onToggle = { onToggle(sender) },
                 onMarkRead = { onMarkRead(sender) },
@@ -171,6 +201,7 @@ fun InboxScreen(
 private fun SenderRow(
     sender: SpamSender,
     keyword: String,
+    handled: HandledReason?,
     selected: Boolean,
     onToggle: () -> Unit,
     onMarkRead: () -> Unit,
@@ -211,6 +242,7 @@ private fun SenderRow(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(sender.displayAddress, style = MaterialTheme.typography.titleSmall)
+                        handled?.let { HandledBadge(it) }
                         if (sender.hasMms) MmsBadge(sender.isAllMms)
                     }
                     Text(
@@ -257,6 +289,31 @@ private fun SenderRow(
             }
         }
     }
+}
+
+/**
+ * Marks a sender the messaging app already dealt with - blocked, or archived.
+ *
+ * Only ever seen with the hide toggle off, and that is the point: once the rows are shown, the
+ * user needs to know which of them are the ones normally filtered away. Without it, turning the
+ * filter off produces a longer list with no indication of what was added.
+ *
+ * Error-toned rather than neutral - not as a warning, but because it is the one status here that
+ * says the system is already refusing this sender's messages.
+ */
+@Composable
+private fun HandledBadge(reason: HandledReason) {
+    Text(
+        if (reason == HandledReason.BLOCKED) "Blocked" else "Archived",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onErrorContainer,
+        modifier = Modifier
+            .background(
+                color = MaterialTheme.colorScheme.errorContainer,
+                shape = RoundedCornerShape(4.dp),
+            )
+            .padding(horizontal = 5.dp, vertical = 1.dp),
+    )
 }
 
 /**

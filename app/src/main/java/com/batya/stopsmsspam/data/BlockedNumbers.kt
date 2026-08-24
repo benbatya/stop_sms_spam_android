@@ -26,6 +26,25 @@ class BlockedNumbers(private val context: Context) {
         runCatching { BlockedNumberContract.isBlocked(context, number) }.getOrDefault(false)
     }
 
+    /**
+     * The subset of [numbers] already on the blocked list.
+     *
+     * Reading is subject to the same caller restriction as writing, so a lost SMS role turns this
+     * into an empty set rather than an error - which reads as "nothing is blocked". That is the
+     * safe direction here: the worst case is showing senders that could have been hidden, and
+     * this filter is about noise, not protection. It is the opposite trade from the contacts
+     * filter, where failing open had to be announced.
+     *
+     * One query per *distinct* number, and only for senders that survived the earlier filters.
+     */
+    suspend fun blockedAmong(numbers: Collection<String>): Set<String> = withContext(Dispatchers.IO) {
+        if (!canBlock()) return@withContext emptySet()
+        numbers.distinct()
+            .filter { it.isNotBlank() }
+            .filter { runCatching { BlockedNumberContract.isBlocked(context, it) }.getOrDefault(false) }
+            .toSet()
+    }
+
     /** @return true if the number is blocked afterwards, whether or not this call did it. */
     suspend fun block(number: String): Boolean = withContext(Dispatchers.IO) {
         if (number.isBlank()) return@withContext false

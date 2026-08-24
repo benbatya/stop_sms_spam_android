@@ -12,6 +12,7 @@ import com.batya.stopsmsspam.bulk.BulkReplyService
 import com.batya.stopsmsspam.data.AppSettings
 import com.batya.stopsmsspam.data.SettingsStore
 import com.batya.stopsmsspam.data.BlockedNumbers
+import com.batya.stopsmsspam.data.PhoneAddress
 import com.batya.stopsmsspam.data.SenderMemory
 import com.batya.stopsmsspam.data.SmsRepository
 import com.batya.stopsmsspam.data.model.ReplyPlan
@@ -24,6 +25,15 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 enum class Screen { Setup, Inbox, Review, Progress }
+
+/**
+ * Why the messaging app is already done with a sender, and so why this app is hiding it.
+ *
+ * Kept as two values rather than one boolean because they mean different things to the user:
+ * blocked is the system refusing the sender's messages, archived is only "filed away", and an
+ * archived thread is far more likely to be something they still want to look at.
+ */
+enum class HandledReason { BLOCKED, ARCHIVED }
 
 data class UiState(
     val screen: Screen = Screen.Setup,
@@ -50,6 +60,21 @@ data class UiState(
      * threads are already gone.
      */
     val confirmedAddresses: Set<String> = emptySet(),
+    /**
+     * How many senders `senders` is currently hiding as already dealt with.
+     *
+     * Only a count, deliberately: the hidden senders are held in the view model, not here, so
+     * nothing in the UI can reach past the filter by accident. Every existing use of [senders] -
+     * "Select all", the unread total, the batch - is then correct without being audited.
+     */
+    val hiddenHandledCount: Int = 0,
+    /**
+     * Which of [senders] the messaging app had already dealt with, by normalized address, and
+     * how. Only ever non-empty when the hide toggle is off - if they were being hidden they would
+     * not be in [senders] to mark. A marker map, not a second sender list: it says something
+     * *about* the visible senders rather than offering a way round the filter.
+     */
+    val handledAddresses: Map<String, HandledReason> = emptyMap(),
     /** Address whose block attempt failed, so the UI can say so rather than silently no-op. */
     val lastBlockFailed: String? = null,
     /**
@@ -90,6 +115,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val blockedNumbers = BlockedNumbers(application)
     private val senderMemory = SenderMemory(application)
     private val roleManager = SmsRoleManager(application)
+
+    /**
+     * Every sender the last load produced, before the blocked-sender toggle is applied. Kept off
+     * [UiState] so the only sender list the UI can see is the filtered one.
+     */
+    private var loadedSenders: List<SpamSender> = emptyList()
+    private var blockedAddresses: Set<String> = emptySet()
+    private var archivedThreadIds: Set<Long> = emptySet()
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
@@ -141,22 +174,67 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val fallback = settingsStore.current().fallbackKeyword
             val optOut = repository.loadOptOutStatus(senderMemory.rememberedConfirmations())
             val confirmed = optOut.filterValues { it.isConfirmed }.keys
-            val senders = repository.loadUnreadSenders(fallback, optOut)
+            loadedSenders = repository.loadUnreadSenders(fallback, optOut)
+            blockedAddresses = blockedNumbers.blockedAmong(loadedSenders.map { it.displayAddress })
+            archivedThreadIds = repository.archivedThreadIds()
             val contactFilterActive = repository.contactFilterActive()
             _state.update { current ->
-                // Drop selections and edits for senders that are no longer unread.
-                val liveKeys = senders.map { it.normalizedAddress }.toSet()
-                current.copy(
-                    loading = false,
-                    senders = senders,
-                    contactFilterActive = contactFilterActive,
-                    confirmedAddresses = confirmed,
-                    selected = current.selected intersect liveKeys,
-                    keywordOverrides = current.keywordOverrides.filterKeys { it in liveKeys },
-                    keepMessages = current.keepMessages intersect liveKeys,
-                    blockOverrides = current.blockOverrides.filterKeys { it in liveKeys },
-                )
+                current.copy(loading = false, contactFilterActive = contactFilterActive)
             }
+            applySenderVisibility(confirmedAddresses = confirmed)
+        }
+    }
+
+    /** Turns the "hide senders already dealt with" filter on or off, without re-reading the inbox. */
+    fun setHideHandledSenders(hide: Boolean) {
+        viewModelScope.launch {
+            settingsStore.update { it.copy(hideHandledSenders = hide) }
+            applySenderVisibility()
+        }
+    }
+
+    /**
+     * Why a sender counts as already dealt with.
+     *
+     * Blocked is checked first because it is the stronger statement - the system is refusing the
+     * sender's messages outright, where an archived thread only means the user filed it away.
+     */
+    private fun handledReason(sender: SpamSender): HandledReason? = when {
+        sender.normalizedAddress in blockedAddressKeys() -> HandledReason.BLOCKED
+        sender.threadIds.isNotEmpty() && sender.threadIds.all { it in archivedThreadIds } ->
+            HandledReason.ARCHIVED
+        else -> null
+    }
+
+    private fun blockedAddressKeys(): Set<String> =
+        blockedAddresses.map { PhoneAddress.normalize(it) }.filterNot { it.isEmpty() }.toSet()
+
+    /**
+     * Republishes [loadedSenders] through the blocked-sender toggle.
+     *
+     * Selections and per-sender edits are pruned to what is *visible*, not merely to what was
+     * loaded: hiding a sender that was already ticked would otherwise leave it selected and in
+     * the batch, which is the one way a filter the user can toggle could still text somebody they
+     * thought they had put away.
+     */
+    private suspend fun applySenderVisibility(confirmedAddresses: Set<String>? = null) {
+        val hide = settingsStore.current().hideHandledSenders
+        val handled = loadedSenders.mapNotNull { s -> handledReason(s)?.let { s.normalizedAddress to it } }.toMap()
+        val visible = if (hide) loadedSenders.filterNot { it.normalizedAddress in handled } else loadedSenders
+        val hiddenCount = loadedSenders.size - visible.size
+        val handledVisible = handled.filterKeys { key -> visible.any { it.normalizedAddress == key } }
+        _state.update { current ->
+            val liveKeys = visible.map { it.normalizedAddress }.toSet()
+            current.copy(
+                senders = visible,
+                hiddenHandledCount = hiddenCount,
+                handledAddresses = handledVisible,
+                confirmedAddresses = confirmedAddresses ?: current.confirmedAddresses,
+                selected = current.selected intersect liveKeys,
+                keywordOverrides = current.keywordOverrides.filterKeys { it in liveKeys },
+                keepMessages = current.keepMessages intersect liveKeys,
+                blockOverrides = current.blockOverrides.filterKeys { it in liveKeys },
+            )
         }
     }
 

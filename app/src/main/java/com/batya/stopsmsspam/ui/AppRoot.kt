@@ -118,6 +118,7 @@ fun AppRoot(viewModel: MainViewModel) {
                 onRequestContacts = {
                     permissionLauncher.launch(arrayOf(Manifest.permission.READ_CONTACTS))
                 },
+                onSetHideHandled = viewModel::setHideHandledSenders,
                 onToggle = viewModel::toggleSelection,
                 onSelectAll = viewModel::selectAll,
                 onClearSelection = viewModel::clearSelection,
