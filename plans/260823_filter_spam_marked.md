@@ -1,4 +1,4 @@
-# Toggle: hide senders already blocked
+# Toggle: hide senders the messaging app already dealt with
 
 ## What was asked for
 
@@ -17,7 +17,8 @@ service_center, locked, sub_id, error_code, creator, seen` - nothing about spam,
 classification. Three candidates were put to the user:
 
 1. **The system blocked-numbers list.** Google Messages' "Block & report spam" writes here, and
-   blocked senders stop appearing in its conversation list - matching the description exactly.
+   blocked senders stop appearing in its conversation list - apparently matching the description
+   exactly. It does not; see below.
 2. **Archived threads** (`archived` does exist on the conversations table), but archiving is a
    manual tidy-away, not a spam verdict.
 3. **Google Messages' own spam folder** - its private database, readable by no other app, so
