@@ -42,6 +42,7 @@ fun InboxScreen(
     state: UiState,
     contentPadding: PaddingValues,
     onRequestContacts: () -> Unit,
+    onSetHideBlocked: (Boolean) -> Unit,
     onToggle: (SpamSender) -> Unit,
     onSelectAll: () -> Unit,
     onClearSelection: () -> Unit,
@@ -88,6 +89,34 @@ fun InboxScreen(
             ) {
                 TextButton(onClick = onSelectAll) { Text("Select all") }
                 TextButton(onClick = onClearSelection) { Text("Clear") }
+            }
+        }
+
+        // Shown whenever the filter is off, not only when it hid something: with it off and the
+        // count at zero the line is the only way to discover the toggle exists at all.
+        if (state.hiddenBlockedCount > 0 || !state.settings.hideBlockedSenders) {
+            item {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        if (state.settings.hideBlockedSenders) {
+                            countOf(state.hiddenBlockedCount, "sender") +
+                                " hidden - already blocked"
+                        } else {
+                            "Showing senders you have already blocked"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        onClick = { onSetHideBlocked(!state.settings.hideBlockedSenders) },
+                    ) {
+                        Text(if (state.settings.hideBlockedSenders) "Show them" else "Hide them")
+                    }
+                }
             }
         }
 

@@ -90,7 +90,7 @@ class SmsRepository(private val context: Context) {
 
             // Last step, and deliberately after grouping: one contacts lookup per sender rather
             // than per message. Everything downstream treats this list as fair game to delete.
-            ContactFilter.exclude(
+            SenderExclusion.exclude(
                 senders,
                 contacts.contactsAmong(senders.map { it.displayAddress }),
             )

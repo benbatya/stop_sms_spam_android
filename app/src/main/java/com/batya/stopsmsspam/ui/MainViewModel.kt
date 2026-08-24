@@ -12,6 +12,7 @@ import com.batya.stopsmsspam.bulk.BulkReplyService
 import com.batya.stopsmsspam.data.AppSettings
 import com.batya.stopsmsspam.data.SettingsStore
 import com.batya.stopsmsspam.data.BlockedNumbers
+import com.batya.stopsmsspam.data.SenderExclusion
 import com.batya.stopsmsspam.data.SenderMemory
 import com.batya.stopsmsspam.data.SmsRepository
 import com.batya.stopsmsspam.data.model.ReplyPlan
@@ -50,6 +51,14 @@ data class UiState(
      * threads are already gone.
      */
     val confirmedAddresses: Set<String> = emptySet(),
+    /**
+     * How many senders `senders` is currently hiding because they are already blocked.
+     *
+     * Only a count, deliberately: the hidden senders are held in the view model, not here, so
+     * nothing in the UI can reach past the filter by accident. Every existing use of [senders] -
+     * "Select all", the unread total, the batch - is then correct without being audited.
+     */
+    val hiddenBlockedCount: Int = 0,
     /** Address whose block attempt failed, so the UI can say so rather than silently no-op. */
     val lastBlockFailed: String? = null,
     /**
@@ -90,6 +99,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val blockedNumbers = BlockedNumbers(application)
     private val senderMemory = SenderMemory(application)
     private val roleManager = SmsRoleManager(application)
+
+    /**
+     * Every sender the last load produced, before the blocked-sender toggle is applied. Kept off
+     * [UiState] so the only sender list the UI can see is the filtered one.
+     */
+    private var loadedSenders: List<SpamSender> = emptyList()
+    private var blockedAddresses: Set<String> = emptySet()
 
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
@@ -141,22 +157,48 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val fallback = settingsStore.current().fallbackKeyword
             val optOut = repository.loadOptOutStatus(senderMemory.rememberedConfirmations())
             val confirmed = optOut.filterValues { it.isConfirmed }.keys
-            val senders = repository.loadUnreadSenders(fallback, optOut)
+            loadedSenders = repository.loadUnreadSenders(fallback, optOut)
+            blockedAddresses = blockedNumbers.blockedAmong(loadedSenders.map { it.displayAddress })
             val contactFilterActive = repository.contactFilterActive()
             _state.update { current ->
-                // Drop selections and edits for senders that are no longer unread.
-                val liveKeys = senders.map { it.normalizedAddress }.toSet()
-                current.copy(
-                    loading = false,
-                    senders = senders,
-                    contactFilterActive = contactFilterActive,
-                    confirmedAddresses = confirmed,
-                    selected = current.selected intersect liveKeys,
-                    keywordOverrides = current.keywordOverrides.filterKeys { it in liveKeys },
-                    keepMessages = current.keepMessages intersect liveKeys,
-                    blockOverrides = current.blockOverrides.filterKeys { it in liveKeys },
-                )
+                current.copy(loading = false, contactFilterActive = contactFilterActive)
             }
+            applySenderVisibility(confirmedAddresses = confirmed)
+        }
+    }
+
+    /** Turns the "hide senders already blocked" filter on or off, without re-reading the inbox. */
+    fun setHideBlockedSenders(hide: Boolean) {
+        viewModelScope.launch {
+            settingsStore.update { it.copy(hideBlockedSenders = hide) }
+            applySenderVisibility()
+        }
+    }
+
+    /**
+     * Republishes [loadedSenders] through the blocked-sender toggle.
+     *
+     * Selections and per-sender edits are pruned to what is *visible*, not merely to what was
+     * loaded: hiding a sender that was already ticked would otherwise leave it selected and in
+     * the batch, which is the one way a filter the user can toggle could still text somebody they
+     * thought they had put away.
+     */
+    private suspend fun applySenderVisibility(confirmedAddresses: Set<String>? = null) {
+        val hide = settingsStore.current().hideBlockedSenders
+        val visible =
+            if (hide) SenderExclusion.exclude(loadedSenders, blockedAddresses) else loadedSenders
+        val hiddenCount = loadedSenders.size - visible.size
+        _state.update { current ->
+            val liveKeys = visible.map { it.normalizedAddress }.toSet()
+            current.copy(
+                senders = visible,
+                hiddenBlockedCount = hiddenCount,
+                confirmedAddresses = confirmedAddresses ?: current.confirmedAddresses,
+                selected = current.selected intersect liveKeys,
+                keywordOverrides = current.keywordOverrides.filterKeys { it in liveKeys },
+                keepMessages = current.keepMessages intersect liveKeys,
+                blockOverrides = current.blockOverrides.filterKeys { it in liveKeys },
+            )
         }
     }
 
