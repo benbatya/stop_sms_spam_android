@@ -99,6 +99,13 @@ on three, and further messages sent after the plan snapshot):
    the number; `18885551234` does not.
 6. "Hide them" → **`4 senders hidden - already blocked`**, list down to `Unread (1)`.
 
+Every blocked number in that verification was put there by this app, minutes earlier. The case
+the feature exists for - a list built up over time by Google Messages' "Block & report spam" -
+has not been exercised: installed to the physical device for that, but the SMS role had reverted
+to Messages and `READ_CONTACTS` was ungranted, both of which the user has to restore by hand.
+So what is proven is the filter, the toggle, the badge and the selection pruning; what is not is
+how many senders this actually hides on a real inbox.
+
 ## Out of scope
 
 - Classifying spam ourselves. The app deliberately has no spam detector.
