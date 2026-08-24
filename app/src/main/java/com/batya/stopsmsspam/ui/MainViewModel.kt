@@ -59,6 +59,14 @@ data class UiState(
      * "Select all", the unread total, the batch - is then correct without being audited.
      */
     val hiddenBlockedCount: Int = 0,
+    /**
+     * Which of [senders] are on the blocked list, by normalized address.
+     *
+     * Only ever non-empty when the hide toggle is off - if they were being hidden they would not
+     * be in [senders] to mark. A marker set, not a second sender list: it says something *about*
+     * the visible senders rather than offering a way round the filter.
+     */
+    val blockedAddresses: Set<String> = emptySet(),
     /** Address whose block attempt failed, so the UI can say so rather than silently no-op. */
     val lastBlockFailed: String? = null,
     /**
@@ -188,11 +196,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val visible =
             if (hide) SenderExclusion.exclude(loadedSenders, blockedAddresses) else loadedSenders
         val hiddenCount = loadedSenders.size - visible.size
+        val blockedVisible =
+            SenderExclusion.matching(visible, blockedAddresses).map { it.normalizedAddress }.toSet()
         _state.update { current ->
             val liveKeys = visible.map { it.normalizedAddress }.toSet()
             current.copy(
                 senders = visible,
                 hiddenBlockedCount = hiddenCount,
+                blockedAddresses = blockedVisible,
                 confirmedAddresses = confirmedAddresses ?: current.confirmedAddresses,
                 selected = current.selected intersect liveKeys,
                 keywordOverrides = current.keywordOverrides.filterKeys { it in liveKeys },

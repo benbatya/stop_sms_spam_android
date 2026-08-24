@@ -59,6 +59,20 @@ there is no line - toggling would change nothing visible, so the control would b
 briefly mistaken for a discoverability bug; it is not, because the control appears exactly when
 it has an effect.
 
+## Shown senders say they are blocked
+
+With the filter off the list simply got longer, with nothing saying which rows had been added -
+so a blocked sender now carries a **Blocked** badge next to its number.
+
+`blockedAddresses` on `UiState` is a *marker* set, not a second sender list: it says something
+about the senders already visible rather than offering a route around the filter, so it does not
+reopen the hole the private-list design closes. It is only ever non-empty with the toggle off -
+a hidden sender is not in `senders` to be marked.
+
+Error-toned rather than neutral. Not as a warning: it is the one status in the list where the
+system is already refusing this sender's messages, which is worth reading differently from
+"unsubscribed" or "MMS".
+
 ## Verified
 
 76 unit tests, `lintDebug` and `assembleDebug` clean.
@@ -77,6 +91,13 @@ arrived after the plan snapshot and survived the cleanup.
 3. `41414` selected (bottom bar "Review 1 reply") → "Hide them" → bottom bar returns to
    "Select the spam to reply to". The hidden sender left the batch.
 4. Force-stop and relaunch with the filter off → still off.
+
+Then again with four blocked senders, built the same way (a five-sender batch with Block ticked
+on three, and further messages sent after the plan snapshot):
+
+5. Filter off → `51511`, `52522`, `53533` and `41414` each show a red **Blocked** badge beside
+   the number; `18885551234` does not.
+6. "Hide them" → **`4 senders hidden - already blocked`**, list down to `Unread (1)`.
 
 ## Out of scope
 

@@ -182,6 +182,7 @@ fun InboxScreen(
             SenderRow(
                 sender = sender,
                 keyword = state.keywordFor(sender),
+                blocked = sender.normalizedAddress in state.blockedAddresses,
                 selected = sender.normalizedAddress in state.selected,
                 onToggle = { onToggle(sender) },
                 onMarkRead = { onMarkRead(sender) },
@@ -200,6 +201,7 @@ fun InboxScreen(
 private fun SenderRow(
     sender: SpamSender,
     keyword: String,
+    blocked: Boolean,
     selected: Boolean,
     onToggle: () -> Unit,
     onMarkRead: () -> Unit,
@@ -240,6 +242,7 @@ private fun SenderRow(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(sender.displayAddress, style = MaterialTheme.typography.titleSmall)
+                        if (blocked) BlockedBadge()
                         if (sender.hasMms) MmsBadge(sender.isAllMms)
                     }
                     Text(
@@ -286,6 +289,31 @@ private fun SenderRow(
             }
         }
     }
+}
+
+/**
+ * Marks a sender that is already on the system blocked list.
+ *
+ * Only ever seen with the hide toggle off, and that is the point: once the rows are shown, the
+ * user needs to know which of them are the ones normally filtered away. Without it, turning the
+ * filter off produces a longer list with no indication of what was added.
+ *
+ * Error-toned rather than neutral - not as a warning, but because it is the one status here that
+ * says the system is already refusing this sender's messages.
+ */
+@Composable
+private fun BlockedBadge() {
+    Text(
+        "Blocked",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onErrorContainer,
+        modifier = Modifier
+            .background(
+                color = MaterialTheme.colorScheme.errorContainer,
+                shape = RoundedCornerShape(4.dp),
+            )
+            .padding(horizontal = 5.dp, vertical = 1.dp),
+    )
 }
 
 /**
