@@ -15,6 +15,7 @@ import com.batya.stopsmsspam.data.BlockedNumbers
 import com.batya.stopsmsspam.data.PhoneAddress
 import com.batya.stopsmsspam.data.SenderMemory
 import com.batya.stopsmsspam.data.SmsRepository
+import com.batya.stopsmsspam.data.model.ClearReason
 import com.batya.stopsmsspam.data.model.ReplyPlan
 import com.batya.stopsmsspam.data.model.SpamSender
 import com.batya.stopsmsspam.role.SmsRoleManager
@@ -53,6 +54,15 @@ data class UiState(
     val keepMessages: Set<String> = emptySet(),
     /** Per-sender overrides of the default blocking decision, keyed by normalized address. */
     val blockOverrides: Map<String, Boolean> = emptyMap(),
+    /**
+     * Senders the user chose on the Review screen to just delete rather than text, by normalized
+     * address. Only meaningful for a sender that *could* be replied to - one already opted out of
+     * was never going to be texted, so suppressing its reply would say nothing.
+     *
+     * Held as the exceptions, like [keepMessages]: replying is what selecting a sender means, and
+     * this records where the user decided otherwise.
+     */
+    val replySuppressed: Set<String> = emptySet(),
     val settings: AppSettings = AppSettings(),
     /**
      * Senders that have acknowledged an opt-out, by normalized address. Kept beside the sender
@@ -87,11 +97,31 @@ data class UiState(
     val ready: Boolean get() = isDefaultSmsApp && hasSmsPermissions
     val selectedSenders: List<SpamSender> get() = senders.filter { it.normalizedAddress in selected }
 
+    /**
+     * Whether an opt-out will actually be texted to this sender: the app has something to send,
+     * and the user has not said to just delete the thread instead.
+     */
+    fun sendsReply(sender: SpamSender): Boolean =
+        sender.canReply && sender.normalizedAddress !in replySuppressed
+
     /** Selected senders that will actually be texted - what the confirmation dialog counts. */
-    val selectedForReply: List<SpamSender> get() = selectedSenders.filter { it.canReply }
+    val selectedForReply: List<SpamSender> get() = selectedSenders.filter { sendsReply(it) }
 
     /** Selected senders that will only have their threads cleared. */
-    val selectedForCleanup: List<SpamSender> get() = selectedSenders.filter { !it.canReply }
+    val selectedForCleanup: List<SpamSender> get() = selectedSenders.filterNot { sendsReply(it) }
+
+    /**
+     * Cleared because there is nobody left to write to - an opt-out already went out.
+     *
+     * Kept apart from [selectedDeleteOnly] wherever the two are shown: one is the app reporting
+     * a fact about the sender, the other is the user's own decision, and a list that merges them
+     * would explain a choice they made as something the sender did.
+     */
+    val selectedAlreadyOptedOut: List<SpamSender> get() = selectedSenders.filterNot { it.canReply }
+
+    /** Cleared because the user said so on Review, despite a reply being possible. */
+    val selectedDeleteOnly: List<SpamSender>
+        get() = selectedSenders.filter { it.canReply && it.normalizedAddress in replySuppressed }
 
     /** Whether the sender's messages will be deleted; false means only marked read. */
     fun deletesMessages(sender: SpamSender): Boolean =
@@ -104,8 +134,22 @@ data class UiState(
     fun blocksNumber(sender: SpamSender): Boolean =
         blockOverrides[sender.normalizedAddress] ?: sender.ignoredOptOut
 
+    /** What the keyword field shows - the user's own text, verbatim, including empty. */
     fun keywordFor(sender: SpamSender): String =
         keywordOverrides[sender.normalizedAddress] ?: sender.keyword.keyword
+
+    /**
+     * What actually gets texted.
+     *
+     * An emptied field falls back to the detected keyword rather than sending a blank message,
+     * which is what clearing the box would otherwise queue up. Deliberately not folded into
+     * [keywordFor]: the field has to let the user delete what is in it before typing something
+     * else, and a value that refuses to go empty cannot be retyped.
+     *
+     * The Review screen states this resolved value, so what it says will be sent is what is.
+     */
+    fun outgoingKeyword(sender: SpamSender): String =
+        keywordFor(sender).trim().ifEmpty { sender.keyword.keyword }
 }
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -234,6 +278,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 keywordOverrides = current.keywordOverrides.filterKeys { it in liveKeys },
                 keepMessages = current.keepMessages intersect liveKeys,
                 blockOverrides = current.blockOverrides.filterKeys { it in liveKeys },
+                replySuppressed = current.replySuppressed intersect liveKeys,
             )
         }
     }
@@ -260,11 +305,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun selectAll() {
         _state.update { current ->
+            val keys = current.senders
+                .filter { it.includedInSelectAll }
+                .map { it.normalizedAddress }
+                .toSet()
             current.copy(
-                selected = current.senders
-                    .filter { it.includedInSelectAll }
-                    .map { it.normalizedAddress }
-                    .toSet(),
+                selected = keys,
+                // A bulk action should land on the defaults, not on whatever was left over from
+                // the last time these rows were ticked: everything it selects replies and
+                // deletes. Only the keys it touches are reset, so a sender it deliberately
+                // skipped keeps whatever the user had already set on it by hand.
+                replySuppressed = current.replySuppressed - keys,
+                keepMessages = current.keepMessages - keys,
             )
         }
     }
@@ -330,6 +382,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Chooses between texting a sender an opt-out and simply clearing its thread.
+     *
+     * Suppressing the reply also turns deleting back on. The control that calls this says
+     * "delete instead", so a sender still marked "keep" from the inbox would otherwise be
+     * neither replied to nor deleted - the batch would touch it only to mark it read, which is
+     * not what the wording promised. The Review summary shows the resulting counts on the same
+     * screen, so the change is visible rather than silent.
+     */
+    fun setSendReply(sender: SpamSender, send: Boolean) {
+        _state.update { current ->
+            val key = sender.normalizedAddress
+            current.copy(
+                replySuppressed =
+                    if (send) current.replySuppressed - key else current.replySuppressed + key,
+                keepMessages = if (send) current.keepMessages else current.keepMessages - key,
+            )
+        }
+    }
+
+    /**
+     * Switches every selected sender that never offered an opt-out over to delete-only.
+     *
+     * These are exactly the senders the Review screen warns about: a reply probably will not
+     * stop them and does confirm the number is live. The warning already told the user to
+     * reconsider them, so it may as well carry the action.
+     */
+    fun deleteInsteadOfReplyingToSendersWithoutOptOut() {
+        _state.update { current ->
+            val keys = current.selectedForReply
+                .filterNot { it.hasOptOutLanguage }
+                .map { it.normalizedAddress }
+            current.copy(
+                replySuppressed = current.replySuppressed + keys,
+                keepMessages = current.keepMessages - keys.toSet(),
+            )
+        }
+    }
+
     fun setBlockNumber(sender: SpamSender, block: Boolean) {
         _state.update { current ->
             current.copy(blockOverrides = current.blockOverrides + (sender.normalizedAddress to block))
@@ -375,12 +466,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val plans = current.selectedSenders.map { sender ->
             ReplyPlan(
                 address = sender.displayAddress,
-                keyword = current.keywordFor(sender),
+                keyword = current.outgoingKeyword(sender),
                 messages = sender.messages,
                 subscriptionId = sender.subscriptionId,
-                // Already opted out of: the thread still gets cleaned up, but sending a second
-                // opt-out would be noise - and to a sender that ignored the first, useless.
-                sendReply = sender.canReply,
+                // No reply goes out when one already did - a second opt-out would be noise, and
+                // to a sender that ignored the first, useless - or when the user chose on this
+                // screen to just delete the thread.
+                sendReply = current.sendsReply(sender),
+                clearReason = when {
+                    current.sendsReply(sender) -> null
+                    sender.canReply -> ClearReason.CHOSEN
+                    else -> ClearReason.ALREADY_OPTED_OUT
+                },
                 delete = current.deletesMessages(sender),
                 block = current.blocksNumber(sender),
             )
@@ -406,7 +503,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** Leaves the results screen: clears progress, reloads the inbox, drops the old selection. */
     fun finishBatch() {
         BulkReplyController.reset()
-        _state.update { it.copy(selected = emptySet(), keywordOverrides = emptyMap()) }
+        _state.update {
+            it.copy(selected = emptySet(), keywordOverrides = emptyMap(), replySuppressed = emptySet())
+        }
         refreshInbox()
         goTo(Screen.Inbox)
     }

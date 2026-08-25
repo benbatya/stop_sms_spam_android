@@ -128,12 +128,15 @@ fun AppRoot(viewModel: MainViewModel) {
                 onBlock = viewModel::blockSender,
                 onSetDelete = viewModel::setDeleteMessages,
                 onSetBlock = viewModel::setBlockNumber,
+                onSetSendReply = viewModel::setSendReply,
+                onKeywordChange = viewModel::setKeyword,
             )
 
             Screen.Review -> ReviewScreen(
                 state = state,
                 contentPadding = padding,
-                onKeywordChange = viewModel::setKeyword,
+                onDeleteSendersWithoutOptOut =
+                    viewModel::deleteInsteadOfReplyingToSendersWithoutOptOut,
                 onSettingsChange = { updated -> viewModel.updateSettings { updated } },
             )
 
@@ -177,8 +180,14 @@ fun AppRoot(viewModel: MainViewModel) {
                         if (state.selectedForCleanup.isNotEmpty()) {
                             append(
                                 " The other ${state.selectedForCleanup.size} " +
-                                    "will be cleared without being texted.",
+                                    "will be cleared without being texted",
                             )
+                            // Naming the ones the user themselves put here: it is the half of
+                            // the batch they can still change their mind about, and the last
+                            // screen that will ask them.
+                            val chosen = state.selectedDeleteOnly.size
+                            if (chosen > 0) append(", $chosen of them because you chose to")
+                            append(".")
                         }
                         val blocking = state.selectedSenders.count { state.blocksNumber(it) }
                         if (blocking > 0) {
