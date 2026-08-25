@@ -11,6 +11,7 @@ import com.batya.stopsmsspam.data.BlockedNumbers
 import com.batya.stopsmsspam.data.SenderMemory
 import com.batya.stopsmsspam.data.SmsRepository
 import com.batya.stopsmsspam.data.model.BatchProgress
+import com.batya.stopsmsspam.data.model.ClearReason
 import com.batya.stopsmsspam.data.model.ReplyPlan
 import com.batya.stopsmsspam.data.model.SendOutcome
 import com.batya.stopsmsspam.data.model.SendStatus
@@ -114,9 +115,9 @@ class BulkReplyService : Service() {
             publish(outcomes)
 
             val outcome = if (!plan.sendReply) {
-                // Already opted out of: clean the thread up, send nothing. Not gated on dryRun
-                // because marking read is what the user asked for either way - and a dry run
-                // that silently skipped it would misrepresent what the real run does.
+                // Nothing to send: clean the thread up and move on. Not gated on dryRun because
+                // marking read is what the user asked for either way - and a dry run that
+                // silently skipped it would misrepresent what the real run does.
                 val cleared = if (snapshot.dryRun) {
                     false
                 } else {
@@ -129,6 +130,9 @@ class BulkReplyService : Service() {
                     detail = when {
                         snapshot.dryRun -> "Dry run - would be cleared, not replied to"
                         cleared -> "Blocked and cleared without replying"
+                        // Which of the two it was matters to the reader: one is something the
+                        // sender did, the other something they themselves chose on Review.
+                        plan.clearReason == ClearReason.CHOSEN -> "Deleted without replying, as chosen"
                         else -> "Already unsubscribed - cleared without replying"
                     },
                     timestamp = System.currentTimeMillis(),

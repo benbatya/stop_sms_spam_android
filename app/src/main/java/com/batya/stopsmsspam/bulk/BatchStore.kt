@@ -2,6 +2,7 @@ package com.batya.stopsmsspam.bulk
 
 import android.content.Context
 import android.util.Log
+import com.batya.stopsmsspam.data.model.ClearReason
 import com.batya.stopsmsspam.data.model.MessageRef
 import com.batya.stopsmsspam.data.model.MessageSource
 import com.batya.stopsmsspam.data.model.ReplyPlan
@@ -62,6 +63,7 @@ class BatchStore(context: Context) {
                             put("keyword", plan.keyword)
                             put("subscriptionId", plan.subscriptionId)
                             put("sendReply", plan.sendReply)
+                            put("clearReason", plan.clearReason?.name ?: JSONObject.NULL)
                             put("delete", plan.delete)
                             put("block", plan.block)
                             // Source travels with each id: a resumed batch must not delete an
@@ -107,6 +109,12 @@ class BatchStore(context: Context) {
                 keyword = obj.getString("keyword"),
                 subscriptionId = obj.optInt("subscriptionId", -1),
                 sendReply = obj.optBoolean("sendReply", true),
+                // A batch written before this field existed only ever skipped a reply because
+                // the sender was already opted out, so that is what its absence means.
+                clearReason = obj.optString("clearReason")
+                    .takeIf { it.isNotEmpty() && it != "null" }
+                    ?.let { name -> ClearReason.entries.firstOrNull { it.name == name } }
+                    ?: ClearReason.ALREADY_OPTED_OUT.takeIf { !obj.optBoolean("sendReply", true) },
                 delete = obj.optBoolean("delete", true),
                 block = obj.optBoolean("block", false),
                 messages = (0 until refsJson.length()).map {

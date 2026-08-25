@@ -122,6 +122,21 @@ data class SpamSender(
     val includedInSelectAll: Boolean get() = !canReply || hasOptOutLanguage
 }
 
+/**
+ * Why a plan clears its thread instead of texting it.
+ *
+ * The two are not interchangeable in the progress list: "already unsubscribed" is a fact about
+ * the sender, while "you chose to delete it" is a fact about the user's decision, and reporting
+ * the first for the second would tell them something about the sender that is simply untrue.
+ */
+enum class ClearReason {
+    /** An opt-out already went out; a second one would be noise. */
+    ALREADY_OPTED_OUT,
+
+    /** The sender could have been texted, and the user said delete it instead. */
+    CHOSEN,
+}
+
 /** One queued reply: what to send, to whom, and which inbox rows it clears. */
 data class ReplyPlan(
     val address: String,
@@ -129,11 +144,14 @@ data class ReplyPlan(
     val messages: List<MessageRef>,
     val subscriptionId: Int,
     /**
-     * False for a sender already opted out of: the thread is still cleaned up, but no message is
-     * sent. Carried on the plan rather than re-derived in the service so that what the batch
-     * will do is fixed at the moment the user confirms it, not recomputed mid-run.
+     * False when the thread is to be cleaned up without a message being sent - either because an
+     * opt-out already went out, or because the user chose on the Review screen to just delete it.
+     * Carried on the plan rather than re-derived in the service so that what the batch will do is
+     * fixed at the moment the user confirms it, not recomputed mid-run.
      */
     val sendReply: Boolean = true,
+    /** Which of the two reasons [sendReply] is false for; null when a reply is going out. */
+    val clearReason: ClearReason? = null,
     /**
      * Delete the sender's messages once handled, rather than only marking them read. The default
      * for everything - the point of the app is to be rid of these - with a per-sender toggle to

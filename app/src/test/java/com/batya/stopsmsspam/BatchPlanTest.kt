@@ -27,6 +27,13 @@ class BatchPlanTest {
         assertTrue(ReplyPlan("22395", "STOP", listOf(MessageRef(1L, MessageSource.SMS)), 1).sendReply)
     }
 
+    // The progress list words a cleared plan from this field, so a plan that is sending must not
+    // carry one - "cleared because you chose to" against a message that went out is a plain lie.
+    @Test
+    fun `a sending plan carries no clear reason`() {
+        assertEquals(null, plan("22395", sendReply = true).clearReason)
+    }
+
     @Test
     fun `only the replying plans are paced`() {
         // Ten selected threads, two of which actually get texted: the run should cost one gap,

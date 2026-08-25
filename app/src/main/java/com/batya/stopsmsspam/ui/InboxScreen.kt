@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,7 +17,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -25,11 +30,20 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.batya.stopsmsspam.data.model.KeywordConfidence
@@ -52,6 +66,8 @@ fun InboxScreen(
     onBlock: (SpamSender) -> Unit,
     onSetDelete: (SpamSender, Boolean) -> Unit,
     onSetBlock: (SpamSender, Boolean) -> Unit,
+    onSetSendReply: (SpamSender, Boolean) -> Unit,
+    onKeywordChange: (SpamSender, String) -> Unit,
 ) {
     if (state.loading && state.senders.isEmpty()) {
         Column(
@@ -76,6 +92,13 @@ fun InboxScreen(
         }
         return
     }
+
+    // Held as an address rather than the sender itself: a refresh mid-dialog replaces every
+    // SpamSender instance, and a captured copy would go on showing a thread that has since been
+    // dealt with. Looked up each recomposition, so a sender that disappears takes its dialog
+    // with it.
+    var detailAddress by remember { mutableStateOf<String?>(null) }
+    val detail = detailAddress?.let { key -> state.senders.firstOrNull { it.normalizedAddress == key } }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -185,15 +208,165 @@ fun InboxScreen(
                 handled = state.handledAddresses[sender.normalizedAddress],
                 selected = sender.normalizedAddress in state.selected,
                 onToggle = { onToggle(sender) },
+                onOpenDetails = { detailAddress = sender.normalizedAddress },
                 onMarkRead = { onMarkRead(sender) },
                 onDelete = { onDelete(sender) },
                 onBlock = { onBlock(sender) },
                 deletes = state.deletesMessages(sender),
                 blocks = state.blocksNumber(sender),
+                replies = state.sendsReply(sender),
                 onSetDelete = { onSetDelete(sender, it) },
                 onSetBlock = { onSetBlock(sender, it) },
+                onSetSendReply = { onSetSendReply(sender, it) },
+                onKeywordChange = { onKeywordChange(sender, it) },
             )
         }
+    }
+
+    detail?.let { sender ->
+        SenderDetailDialog(
+            sender = sender,
+            keyword = state.keywordFor(sender),
+            handled = state.handledAddresses[sender.normalizedAddress],
+            replies = state.sendsReply(sender),
+            selected = sender.normalizedAddress in state.selected,
+            onToggleSelection = { onToggle(sender) },
+            onDismiss = { detailAddress = null },
+        )
+    }
+}
+
+/**
+ * Everything known about one sender, in full.
+ *
+ * The row can only ever show an excerpt - three lines of a message that may be twenty, a chip
+ * for a keyword whose provenance takes a sentence to explain. Deciding whether a thread is spam
+ * or a delivery notice from somebody real needs the whole thing, and this is where the user gets
+ * it before ticking a box that deletes it.
+ */
+@Composable
+private fun SenderDetailDialog(
+    sender: SpamSender,
+    keyword: String,
+    handled: HandledReason?,
+    replies: Boolean,
+    selected: Boolean,
+    onToggleSelection: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val stamp = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+    val dates = DateFormat.getDateInstance(DateFormat.MEDIUM)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(sender.displayAddress) },
+        text = {
+            // Long messages are the reason this dialog exists, so the body scrolls rather than
+            // pushing the buttons off the bottom of a small screen.
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                DetailSection("Latest message", stamp.format(Date(sender.latestDate))) {
+                    Text(sender.latestBody, style = MaterialTheme.typography.bodyMedium)
+                }
+
+                DetailSection(
+                    "This sender",
+                    countOf(sender.messageCount, "unread message") + when {
+                        sender.isAllMms -> " - all MMS"
+                        sender.hasMms -> " - ${sender.mmsCount} of them MMS"
+                        else -> ""
+                    },
+                ) {
+                    val status = sender.optedOut
+                    Text(
+                        when {
+                            sender.ignoredOptOut ->
+                                "Confirmed the opt-out and messaged again anyway on " +
+                                    dates.format(Date(sender.optOutViolatedAt!!)) +
+                                    ". Asking has already been tried and did not work."
+                            status?.isConfirmed == true ->
+                                "Unsubscribed - \"${status.keyword}\" was sent on " +
+                                    dates.format(Date(status.sentAtMillis)) + " and they " +
+                                    "confirmed on " + dates.format(Date(status.confirmedAtMillis!!)) + "."
+                            status != null ->
+                                "\"${status.keyword}\" was sent on " +
+                                    dates.format(Date(status.sentAtMillis)) +
+                                    ", with no confirmation back yet."
+                            else -> "No opt-out has been sent to this number yet."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    handled?.let {
+                        Text(
+                            if (it == HandledReason.BLOCKED) {
+                                "Your system already blocks this number."
+                            } else {
+                                "This thread is archived in your messaging app."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+
+                DetailSection("The reply", null) {
+                    Text(
+                        when {
+                            !sender.canReply ->
+                                "Nothing will be sent - this sender has already been told to " +
+                                    "stop. Selecting it only clears the thread."
+                            !replies ->
+                                "Nothing will be sent - you chose to delete this thread instead."
+                            else -> when (sender.keyword.confidence) {
+                                KeywordConfidence.EXPLICIT ->
+                                    "\"$keyword\" - the message spells out this keyword, so it " +
+                                        "is what they asked for."
+                                KeywordConfidence.LIKELY ->
+                                    "\"$keyword\" - opt-out wording is present and this keyword " +
+                                        "is near it, but the phrasing is loose."
+                                KeywordConfidence.ASSUMED ->
+                                    "\"$keyword\" - a guess. Nothing in this message says how to " +
+                                        "opt out, so a reply probably will not stop them and " +
+                                        "does tell them the number is live."
+                            }
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (replies && sender.canReply && !sender.hasOptOutLanguage) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            Color.Unspecified
+                        },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onToggleSelection()
+                    onDismiss()
+                },
+            ) { Text(if (selected) "Remove from batch" else "Add to batch") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
+}
+
+/** A labelled block in [SenderDetailDialog], with an optional grey note beside the label. */
+@Composable
+private fun DetailSection(title: String, note: String?, content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(title, style = MaterialTheme.typography.labelLarge)
+        note?.takeIf { it.isNotBlank() }?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        content()
     }
 }
 
@@ -204,19 +377,23 @@ private fun SenderRow(
     handled: HandledReason?,
     selected: Boolean,
     onToggle: () -> Unit,
+    onOpenDetails: () -> Unit,
     onMarkRead: () -> Unit,
     onDelete: () -> Unit,
     onBlock: () -> Unit,
     deletes: Boolean,
     blocks: Boolean,
+    replies: Boolean,
     onSetDelete: (Boolean) -> Unit,
     onSetBlock: (Boolean) -> Unit,
+    onSetSendReply: (Boolean) -> Unit,
+    onKeywordChange: (String) -> Unit,
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 4.dp)
-            .clickable(onClick = onToggle),
+            .clickable(onClick = onOpenDetails),
         colors = if (selected) {
             CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
         } else {
@@ -265,12 +442,27 @@ private fun SenderRow(
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                 )
+                // The card shows an excerpt; tapping it opens the whole thing. Said out loud
+                // because the card used to toggle selection on tap, and a control that quietly
+                // changes what it does is worse than one that never did it.
+                Text(
+                    "Tap for the full message",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
 
                 // Keyed on canReply, not on isUnsubscribed: a sender that was sent an opt-out
                 // and never answered is still one the batch will clear rather than text, and
                 // showing it a "Reply STOP" chip would promise something that will not happen.
                 if (sender.canReply) {
-                    KeywordChip(keyword, sender.keyword.confidence)
+                    ReplyToggle(
+                        enabled = selected,
+                        checked = replies,
+                        keyword = keyword,
+                        guessed = !sender.hasOptOutLanguage,
+                        onToggle = onSetSendReply,
+                        onKeywordChange = onKeywordChange,
+                    )
                 } else {
                     UnsubscribedRow(sender, onMarkRead, onDelete, onBlock)
                 }
@@ -340,6 +532,100 @@ private fun MmsBadge(allMms: Boolean) {
             )
             .padding(horizontal = 5.dp, vertical = 1.dp),
     )
+}
+
+/**
+ * Whether this sender gets texted at all, and exactly what it gets.
+ *
+ * The keyword is typed in place rather than described, because what the app detected is only a
+ * proposal - the sender is the one who decides which word works, and only they know when it is
+ * something other than STOP. Editing it here means never having to carry a wrong guess through
+ * to the Review screen to fix it.
+ *
+ * The tick sits on the same line for the same reason it always did: unticked, the words beside
+ * it describe a message nobody will receive. The thread is still dealt with - the batch clears
+ * it - which is what makes unticking this the "just get rid of it" answer.
+ */
+@Composable
+private fun ReplyToggle(
+    enabled: Boolean,
+    checked: Boolean,
+    keyword: String,
+    guessed: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onKeywordChange: (String) -> Unit,
+) {
+    val editable = enabled && checked
+    val underline = MaterialTheme.colorScheme.outline
+    val ink = when {
+        !enabled -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+        !checked -> MaterialTheme.colorScheme.onSurfaceVariant
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        // The outer swallow keeps a stray tap from reaching the card and opening the dialog
+        // over a field the user is in the middle of typing into.
+        Row(
+            modifier = Modifier.then(if (enabled) Modifier.noRippleClickable { } else Modifier),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                modifier = Modifier
+                    .then(if (enabled) Modifier.noRippleClickable { onToggle(!checked) } else Modifier),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(checked = checked, onCheckedChange = onToggle, enabled = enabled)
+                Text("Reply \"", style = MaterialTheme.typography.bodyMedium, color = ink)
+            }
+
+            BasicTextField(
+                value = keyword,
+                onValueChange = onKeywordChange,
+                enabled = editable,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                    color = ink,
+                    textDecoration = if (checked) null else TextDecoration.LineThrough,
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                // Keywords are upper-case by convention and `setKeyword` upper-cases anyway;
+                // the keyboard may as well not fight it.
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Characters,
+                    imeAction = ImeAction.Done,
+                ),
+                modifier = Modifier
+                    .width(96.dp)
+                    .drawBehind {
+                        // Underlined rather than boxed: it has to read as a word inside a
+                        // sentence, which a full input outline would break up.
+                        if (editable) {
+                            drawLine(
+                                color = underline,
+                                start = Offset(0f, size.height),
+                                end = Offset(size.width, size.height),
+                                strokeWidth = 1.dp.toPx(),
+                            )
+                        }
+                    },
+            )
+
+            Text("\"", style = MaterialTheme.typography.bodyMedium, color = ink)
+        }
+
+        // What the dropped "(probable)" suffix used to carry. Only the one case is worth a line
+        // of its own: the others say a keyword was found, this one says none was, which is the
+        // difference between a reply that stops somebody and a reply that confirms the number
+        // is live to a stranger.
+        if (guessed && checked) {
+            Text(
+                "No opt-out offered - this keyword is a guess",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
 }
 
 /**
@@ -503,32 +789,3 @@ private fun UnsubscribedRow(
     }
 }
 
-/**
- * The chip carries the warning that matters most: a sender whose message never mentioned an
- * opt-out probably will not honour one, and replying tells them the number is live. Note this is
- * the absence of a signal, not a judgement about the sender - see `SpamSender.hasOptOutLanguage`.
- */
-@Composable
-private fun KeywordChip(keyword: String, confidence: KeywordConfidence) {
-    val (label, warning) = when (confidence) {
-        KeywordConfidence.EXPLICIT -> "Reply \"$keyword\" (they asked for it)" to false
-        KeywordConfidence.LIKELY -> "Reply \"$keyword\" (probable)" to false
-        KeywordConfidence.ASSUMED -> "No opt-out offered - \"$keyword\" is a guess" to true
-    }
-    AssistChip(
-        onClick = {},
-        enabled = false,
-        label = { Text(label, style = MaterialTheme.typography.labelSmall) },
-        colors = if (warning) {
-            AssistChipDefaults.assistChipColors(
-                disabledContainerColor = MaterialTheme.colorScheme.errorContainer,
-                disabledLabelColor = MaterialTheme.colorScheme.onErrorContainer,
-            )
-        } else {
-            AssistChipDefaults.assistChipColors(
-                disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        },
-    )
-}
