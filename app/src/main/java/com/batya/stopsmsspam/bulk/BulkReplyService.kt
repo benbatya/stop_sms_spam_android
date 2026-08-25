@@ -12,6 +12,7 @@ import com.batya.stopsmsspam.data.SenderMemory
 import com.batya.stopsmsspam.data.SmsRepository
 import com.batya.stopsmsspam.data.model.BatchProgress
 import com.batya.stopsmsspam.data.model.ClearReason
+import com.batya.stopsmsspam.data.model.MessageRef
 import com.batya.stopsmsspam.data.model.ReplyPlan
 import com.batya.stopsmsspam.data.model.SendOutcome
 import com.batya.stopsmsspam.data.model.SendStatus
@@ -160,7 +161,7 @@ class BulkReplyService : Service() {
                         // Nothing to record here: SmsSender files the reply into the Sent box
                         // on confirmation, and that row is what later marks this sender as
                         // already opted out.
-                        val blocked = applyPostSend(repository, blockedNumbers, plan)
+                        val blocked = applyPostSend(repository, blockedNumbers, plan, result.sentRef)
                         SendOutcome(
                             address = plan.address,
                             keyword = plan.keyword,
@@ -225,10 +226,17 @@ class BulkReplyService : Service() {
      *
      * @return true if the number was blocked.
      */
+    /**
+     * @param sentRef the Sent-box row filed for this plan's reply, if one went out. Deleting the
+     * thread has to take it too: it is created *after* [ReplyPlan.messages] was captured, so a
+     * delete driven by that list alone leaves the conversation alive with nothing in it but our
+     * own opt-out - which is what the user sees in their messaging app.
+     */
     private suspend fun applyPostSend(
         repository: SmsRepository,
         blockedNumbers: BlockedNumbers,
         plan: ReplyPlan,
+        sentRef: MessageRef? = null,
     ): Boolean {
         val blocked = if (plan.block) {
             runCatching { blockedNumbers.block(plan.address) }
@@ -240,7 +248,7 @@ class BulkReplyService : Service() {
 
         runCatching {
             if (plan.delete) {
-                repository.delete(plan.messages)
+                repository.delete(plan.messages + listOfNotNull(sentRef))
                 // Deleting the thread implies not wanting its reply either, so the sender's
                 // acknowledgement is dropped on arrival instead of landing back in the inbox.
                 SenderMemory(this).markAutoDeleteResponses(plan.address)

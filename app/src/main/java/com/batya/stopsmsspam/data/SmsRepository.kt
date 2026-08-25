@@ -250,11 +250,23 @@ class SmsRepository(private val context: Context) {
      *
      * The second query is bounded by the first: with no opt-outs sent there is nothing to look
      * for, and otherwise only messages newer than the earliest opt-out can possibly confirm one.
+     *
+     * [rememberedOptOuts] covers the case the provider cannot: the batch deletes the thread it
+     * just replied in, taking its own Sent row with it, so without this a sender would look
+     * never-contacted the moment its thread was cleared.
      */
     suspend fun loadOptOutStatus(
         rememberedConfirmations: Map<String, Long> = emptyMap(),
+        rememberedOptOuts: Map<String, OptOutStatus> = emptyMap(),
     ): Map<String, OptOutStatus> = withContext(Dispatchers.IO) {
         if (!canReadSms()) return@withContext emptyMap()
+
+        // Seeded before the Sent-box pass, not merged after it, for two reasons: the pass
+        // overwrites per address, so a Sent row that still exists wins on recency as it should;
+        // and the "no opt-outs found" early return below would otherwise discard the remembered
+        // ones outright - which is exactly the case that matters, since they are remembered
+        // *because* their Sent rows were deleted.
+        val optOuts = LinkedHashMap<String, OptOutStatus>(rememberedOptOuts)
 
         val sent = context.contentResolver.query(
             Telephony.Sms.Sent.CONTENT_URI,
@@ -262,11 +274,10 @@ class SmsRepository(private val context: Context) {
             null,
             null,
             "${Telephony.Sms.DATE} ASC",
-        ) ?: return@withContext emptyMap()
+        ) ?: return@withContext RememberedConfirmations.applyTo(optOuts, rememberedConfirmations)
 
         // Latest opt-out wins: if a sender was told to stop twice, the second attempt is the one
         // a confirmation has to follow.
-        val optOuts = LinkedHashMap<String, OptOutStatus>()
         sent.use {
             val addressIdx = it.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
             val bodyIdx = it.getColumnIndexOrThrow(Telephony.Sms.BODY)
@@ -276,13 +287,17 @@ class SmsRepository(private val context: Context) {
                 if (!OptOutKeywordDetector.isOptOutReply(body)) continue
                 val key = PhoneAddress.normalize(it.getString(addressIdx) ?: continue)
                 if (key.isEmpty()) continue
+                val date = it.getLong(dateIdx)
+                // A remembered opt-out may already be here and may be the newer of the two.
+                if (date < (optOuts[key]?.sentAtMillis ?: Long.MIN_VALUE)) continue
                 optOuts[key] = OptOutStatus(
                     keyword = body.trim().uppercase(),
-                    sentAtMillis = it.getLong(dateIdx),
+                    sentAtMillis = date,
                 )
             }
         }
         if (optOuts.isEmpty()) return@withContext emptyMap()
+
 
         val earliest = optOuts.values.minOf { it.sentAtMillis }
         val replies = context.contentResolver.query(

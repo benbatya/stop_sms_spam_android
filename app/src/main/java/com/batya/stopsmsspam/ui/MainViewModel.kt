@@ -216,7 +216,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _state.update { it.copy(loading = true) }
             val fallback = settingsStore.current().fallbackKeyword
-            val optOut = repository.loadOptOutStatus(senderMemory.rememberedConfirmations())
+            val optOut = repository.loadOptOutStatus(
+                senderMemory.rememberedConfirmations(),
+                senderMemory.rememberedOptOuts(),
+            )
             val confirmed = optOut.filterValues { it.isConfirmed }.keys
             loadedSenders = repository.loadUnreadSenders(fallback, optOut)
             blockedAddresses = blockedNumbers.blockedAmong(loadedSenders.map { it.displayAddress })
@@ -448,7 +451,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun refreshConfirmations() {
         viewModelScope.launch {
-            val optOut = repository.loadOptOutStatus(senderMemory.rememberedConfirmations())
+            val optOut = repository.loadOptOutStatus(
+                senderMemory.rememberedConfirmations(),
+                senderMemory.rememberedOptOuts(),
+            )
             _state.update { it.copy(confirmedAddresses = optOut.filterValues { s -> s.isConfirmed }.keys) }
         }
     }

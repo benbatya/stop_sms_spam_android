@@ -11,7 +11,10 @@ import android.content.pm.PackageManager
 import android.telephony.SmsManager
 import androidx.core.content.ContextCompat
 import com.batya.stopsmsspam.data.PhoneAddress
+import com.batya.stopsmsspam.data.SenderMemory
 import com.batya.stopsmsspam.data.SmsRepository
+import com.batya.stopsmsspam.data.model.MessageRef
+import com.batya.stopsmsspam.data.model.MessageSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -20,7 +23,12 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
 
 sealed interface SendResult {
-    data object Success : SendResult
+    /**
+     * @param sentRef the Sent-box row this app filed for the reply, when it could be identified.
+     * Carried out to the caller because deleting the sender's thread has to delete our own reply
+     * too, and that row did not exist when the batch captured the sender's messages.
+     */
+    data class Success(val sentRef: MessageRef? = null) : SendResult
 
     /** The radio refused it. This message did not go out and will not. */
     data class Failure(val reason: String) : SendResult
@@ -123,10 +131,22 @@ object SmsSender {
                 },
             )
             Activity.RESULT_OK -> {
+                // Recorded before the row is filed, not after: if the batch goes on to delete
+                // this thread, that row is the only evidence the opt-out happened, and losing it
+                // would make the sender look never-contacted next time the inbox loads.
+                runCatching {
+                    SenderMemory(context).rememberOptOutSent(address, body, System.currentTimeMillis())
+                }
+
                 // Now that we hold the SMS role we are also responsible for threading our own
                 // outgoing message, so it shows up in the real conversation.
-                runCatching { SmsRepository(context).logSent(address, body, subscriptionId) }
-                SendResult.Success
+                val sentRef = runCatching { SmsRepository(context).logSent(address, body, subscriptionId) }
+                    .getOrNull()
+                    ?.lastPathSegment
+                    ?.toLongOrNull()
+                    ?.let { MessageRef(it, MessageSource.SMS) }
+
+                SendResult.Success(sentRef)
             }
             else -> SendResult.Failure(describe(resultCode))
         }
